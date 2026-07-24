@@ -182,7 +182,7 @@ language as already satisfied — see
 [embedded vs external](#embedded-vs-external-subtitles) below.
 
 One-time setup (languages, providers, Radarr/Sonarr connections) is
-**[README step 7](../README.md#7-configure-bazarr-subtitles)**. The rest of this
+**[README step 5](../README.md#5-configure-bazarr-subtitles)**. The rest of this
 section assumes that is done.
 
 ### Everyday use

@@ -3,9 +3,18 @@
 Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 [TRaSH Guides](https://trash-guides.info/).
 
-**Docs:** [User Guide](docs/USER-GUIDE.md) — adding films/shows and watching them ·
-[Remote Access](docs/REMOTE-ACCESS.md) — watching away from home via Tailscale ·
-[Architecture](docs/ARCHITECTURE.md) — how it works internally
+## → Start here: [QUICKSTART.md](docs/QUICKSTART.md)
+
+Bringing it back after a **reboot**, or setting up from a **fresh clone** — both are
+there. The rest of this README is the detailed reference behind those steps.
+
+| Doc | For |
+|---|---|
+| [Quickstart](docs/QUICKSTART.md) | Get it running: after a reboot, or from scratch |
+| [User Guide](docs/USER-GUIDE.md) | Daily use — adding films, watching, subtitles, remote |
+| [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
+| [Architecture](docs/ARCHITECTURE.md) | How the parts fit together internally |
+| `docs/CREDENTIALS.md` | Logins and API keys |
 
 ## How it fits together
 
@@ -43,38 +52,24 @@ Everything lives under one root so hardlinks work across containers:
 > set the `radarr` category's save path to `/data/torrents/movies` and `tv-sonarr`
 > to `/data/torrents/tv`.
 
-## Prerequisites
-
-- Docker + Docker Compose installed
-- Your user in the `docker` group (`sudo usermod -aG docker $USER`, then re-login)
-
 ## Setup
 
-### 1. Configure environment
+Prerequisites, `.env`, folder creation and `docker compose up -d` are in the
+[Quickstart](docs/QUICKSTART.md#b-from-a-fresh-clone). What follows is the per-app
+configuration in detail — do it in this order, since each step depends on the last.
 
-Copy `.env.example` to `.env` and adjust `DATA_ROOT` / `TZ` / `PUID` / `PGID` if needed
-(defaults assume `PUID=1000`, `PGID=1000`, `TZ=Asia/Bangkok`, data at `/mnt/f/film-data`).
+| Service | URL | Purpose |
+|---|---|---|
+| Prowlarr | http://localhost:9696 | Indexer manager |
+| Radarr | http://localhost:7878 | Movie automation |
+| Sonarr | http://localhost:8989 | TV automation |
+| Bazarr | http://localhost:6767 | Subtitle automation |
+| qBittorrent | http://localhost:8080 | Download client |
+| FlareSolverr | http://localhost:8191 | Cloudflare-challenge solver for indexers |
+| Jellyfin | http://localhost:8096 | Media playback |
+| Recyclarr | CLI only | Syncs TRaSH quality profiles / custom formats |
 
-### 2. Start the stack
-
-```
-docker compose up -d
-```
-
-This brings up:
-
-| Service      | URL                     | Purpose                                          |
-|--------------|-------------------------|----------------------------------------------------|
-| Prowlarr     | http://localhost:9696   | Indexer manager                                    |
-| Radarr       | http://localhost:7878   | Movie automation                                   |
-| Sonarr       | http://localhost:8989   | TV automation                                       |
-| Bazarr       | http://localhost:6767   | Subtitle automation for Radarr/Sonarr libraries      |
-| qBittorrent  | http://localhost:8080   | Download client                                     |
-| FlareSolverr | http://localhost:8191   | Cloudflare-challenge solver proxy for indexers      |
-| Jellyfin     | http://localhost:8096   | Media playback                                      |
-| Recyclarr    | (no UI — CLI only)      | Syncs TRaSH quality profiles/custom formats on demand |
-
-### 3. Configure qBittorrent
+### 1. Configure qBittorrent
 
 1. Open http://localhost:8080.
 2. Get the temporary admin password from the logs:
@@ -98,7 +93,7 @@ This brings up:
    This only affects torrents added *after* the change, and does nothing for
    private trackers (which reject foreign announce URLs).
 
-### 4. Configure Prowlarr (indexers)
+### 2. Configure Prowlarr (indexers)
 
 1. Open http://localhost:9696.
 2. (Optional) **Settings → General** → set up authentication.
@@ -109,7 +104,7 @@ This brings up:
    (a headless-browser proxy) to solve that — see Troubleshooting below for how to
    wire it up per-indexer.
 
-### 5. Connect Prowlarr → Radarr/Sonarr
+### 3. Connect Prowlarr → Radarr/Sonarr
 
 Prowlarr needs to push its indexers into Radarr/Sonarr. This is app-to-app
 communication over the Docker network, not through your browser — so it uses
@@ -139,7 +134,7 @@ In Prowlarr:
 Once saved, Prowlarr automatically syncs its indexers into both apps — no need to
 add indexers separately in Radarr/Sonarr.
 
-### 6. Configure Radarr/Sonarr
+### 4. Configure Radarr/Sonarr
 
 **Radarr** (http://localhost:7878):
 
@@ -181,10 +176,10 @@ add indexers separately in Radarr/Sonarr.
 Re-run `docker compose run --rm recyclarr sync` any time to pick up upstream
 TRaSH Guide changes.
 
-### 7. Configure Bazarr (subtitles)
+### 5. Configure Bazarr (subtitles)
 
 Bazarr watches the Radarr/Sonarr libraries and writes `.srt` files next to each video,
-which Jellyfin then picks up on its own. Do this after step 6 — it reads its library
+which Jellyfin then picks up on its own. Do this after step 4 — it reads its library
 list from Radarr/Sonarr, so those must be working first.
 
 Open http://localhost:6767.
@@ -213,7 +208,7 @@ Open http://localhost:6767.
    | Port | `7878` | `8989` |
    | API key | see `docs/CREDENTIALS.md` | see `docs/CREDENTIALS.md` |
 
-   Use the container names, not `localhost` (same reason as step 5). Leave **path
+   Use the container names, not `localhost` (same reason as step 3). Leave **path
    mappings empty** — Bazarr mounts the same `${DATA_ROOT}:/data` as Radarr/Sonarr,
    so the paths they report already resolve correctly inside Bazarr.
 
@@ -266,7 +261,7 @@ shared mount *is* the integration.
 > **Settings → General → Security** before enabling
 > [remote access](docs/REMOTE-ACCESS.md).
 
-### 8. Configure Jellyfin
+### 6. Configure Jellyfin
 
 1. Open http://localhost:8096 → first-run wizard: pick a language, create your
    admin account.
