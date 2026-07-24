@@ -14,6 +14,11 @@ setup steps.
 | qBittorrent  | `lscr.io/linuxserver/qbittorrent`         | Download client — fetches the actual file via BitTorrent |
 | FlareSolverr | `ghcr.io/flaresolverr/flaresolverr`       | Headless-browser proxy — solves Cloudflare challenges for indexers that need it |
 | Jellyfin     | `lscr.io/linuxserver/jellyfin`            | Media server — serves the organized library for playback |
+| Recyclarr    | `ghcr.io/recyclarr/recyclarr:8`           | Run-to-completion CLI — pushes TRaSH quality profiles/custom formats into Radarr/Sonarr |
+
+Recyclarr is the one service that is not long-running: it has `restart: "no"` and is
+invoked on demand (`docker compose run --rm recyclarr sync`), does its work against
+the Radarr/Sonarr APIs, then exits. It has no web UI and no published port.
 
 ## Component diagram
 
@@ -28,6 +33,7 @@ flowchart TB
         qBit["qBittorrent<br/>:8080"]
         Flare["FlareSolverr<br/>:8191"]
         Jellyfin["Jellyfin<br/>:8096"]
+        Recyclarr["Recyclarr<br/>(CLI, on demand)"]
     end
 
     subgraph Storage["/data (shared host path, DATA_ROOT)"]
@@ -45,6 +51,10 @@ flowchart TB
 
     Prowlarr -- "API key" --> Radarr
     Prowlarr -- "API key" --> Sonarr
+    Recyclarr -- "API key: quality profiles + CFs" --> Radarr
+    Recyclarr -- "API key: quality profiles + CFs" --> Sonarr
+    TrashRepo(["TRaSH Guides repo<br/>(templates, trash_ids)"])
+    Recyclarr -.->|clones/pulls| TrashRepo
     Prowlarr -- "search / proxy" --> Flare
     Flare -- "solved requests" --> Internet
     Prowlarr -.->|direct requests| Internet
@@ -87,8 +97,11 @@ sequenceDiagram
     Prowlarr-->>Radarr: Matching releases
     Radarr->>Radarr: Pick best release (quality profile / custom formats)
     Radarr->>qBittorrent: Send torrent to download
-    qBittorrent->>Disk: Write to /data/torrents/movies
-    qBittorrent-->>Radarr: Download complete
+    qBittorrent->>Disk: Write to /data/torrents
+    loop every minute (checkForFinishedDownloadInterval)
+        Radarr->>qBittorrent: Poll queue status
+    end
+    qBittorrent-->>Radarr: Reports download complete
     Radarr->>Disk: Hardlink into /data/media/movies (renamed)
     Jellyfin->>Disk: Scan /data/media
     You->>Jellyfin: Watch
@@ -170,6 +183,57 @@ flagged this way on sites like 1337x. This looks like a network failure
 runs an actual headless Chromium browser in its own container; Prowlarr routes
 requests for flagged indexers through it (`Settings → Indexer Proxies`), and
 FlareSolverr's browser passes the challenge and returns the real page.
+
+## Release selection, and the limits of custom formats
+
+Radarr/Sonarr choose what to grab by scoring each candidate release against the
+quality profile's **custom formats** (synced from TRaSH by Recyclarr). Crucially,
+custom formats match on the **release title text**, not on the file's actual
+contents — the release hasn't been downloaded yet, so the title is all there is
+to judge by.
+
+That has a consequence worth internalizing: an unwanted release whose *title*
+looks legitimate passes scoring and gets grabbed. The concrete case seen here was
+a raw Blu-ray disc dump (`BDMV/STREAM/*.m2ts` tree) whose title read like a normal
+encode; TRaSH's **BR-DISK** format scores `-10000` and the profile's
+`minFormatScore` is `0`, so it *would* have been rejected had the title admitted
+what it was. Import failed only after the bytes were on disk.
+
+## Failure handling: what is automatic and what is not
+
+Radarr's download-client config (`/api/v3/config/downloadclient`) governs recovery:
+
+| Setting | Value | Effect |
+|---|---|---|
+| `enableCompletedDownloadHandling` | `true` | Finished downloads are imported automatically |
+| `checkForFinishedDownloadInterval` | `1` (min) | How often the queue is polled |
+| `autoRedownloadFailed` | `true` | A **failed** download is blocklisted and replaced automatically |
+| `rssSyncInterval` | `30` (min) | Periodic re-check of indexers for monitored items |
+
+The gap is the distinction between *failed* and *stalled*. `autoRedownloadFailed`
+fires when the download client reports failure — a corrupt download, or an import
+error like the disc-dump case, which is why several replacement grabs chained
+automatically without intervention. But a torrent sitting at 0% in `metaDL` with
+no reachable peers is never reported as failed; it is simply never finished. No
+timeout reclassifies it, so it occupies the queue indefinitely until removed by
+hand (**Blocklist and Search**).
+
+## Why download speed is a sourcing problem, not a config problem
+
+With DHT, PeX and LSD enabled, no rate limits, and a reachable listening port,
+throughput is bounded by how many seeders the *chosen release* has. Public
+trackers seed well only while a release is topical, then decay — which is how a
+grab can be technically valid yet effectively undownloadable (0 seeds, or 3 seeds
+at a few hundred KB/s). Two levers actually move this:
+
+1. **More indexers** — a deeper candidate pool means a better chance the
+   best-scoring release is also well-seeded.
+2. **Private trackers** — enforced seeding ratios keep releases alive for years,
+   which is a structural fix rather than a probabilistic one.
+
+Supplementing new torrents with a curated public-tracker list (qBittorrent
+**Options → BitTorrent → automatically add these trackers**) helps releases whose
+embedded tracker list is thin, but it cannot manufacture seeders that do not exist.
 
 ## Known environment quirk: IPv6
 

@@ -19,14 +19,23 @@ Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 Everything lives under one root so hardlinks work across containers:
 
 ```
-/mnt/f/film-data
-├── media/
-│   ├── movies/
-│   └── tv/
-└── torrents/
-    ├── movies/
-    └── tv/
+/mnt/f/film-data          → mounted as /data in each container
+├── media/                → the organized library (Jellyfin reads this)
+│   ├── movies/           → Radarr root folder
+│   └── tv/               → Sonarr root folder
+└── torrents/             → qBittorrent's completed save path
+    ├── incomplete/       → in-progress downloads (temp path)
+    ├── movies/           → intended save path for Radarr's category
+    └── tv/               → intended save path for Sonarr's category
 ```
+
+> **Current deviation:** qBittorrent's `radarr` and `tv-sonarr` categories have no
+> per-category save path set, so completed downloads land directly in
+> `/data/torrents/` rather than the `movies/`/`tv/` subfolders. Hardlinking and
+> importing still work (same filesystem either way), but the split TRaSH recommends
+> isn't in effect. To align: in qBittorrent **Options → Downloads → Categories**,
+> set the `radarr` category's save path to `/data/torrents/movies` and `tv-sonarr`
+> to `/data/torrents/tv`.
 
 ## Prerequisites
 
@@ -71,8 +80,16 @@ This brings up:
    container restart until you do this.)
 5. Go to **Options → Downloads**:
    - **Default Save Path:** `/data/torrents`
-   - (Optional) enable **"Keep incomplete torrents in"** → `/data/torrents/incomplete`
+   - Enable **"Keep incomplete torrents in"** → `/data/torrents/incomplete`
 6. **Save**.
+7. Recommended — improve peer discovery on weakly-seeded public releases. Under
+   **Options → BitTorrent**, enable **"Automatically add these trackers to new
+   downloads"** and paste a curated public-tracker list:
+   ```
+   curl -s https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt
+   ```
+   This only affects torrents added *after* the change, and does nothing for
+   private trackers (which reject foreign announce URLs).
 
 ### 4. Configure Prowlarr (indexers)
 
@@ -170,50 +187,27 @@ TRaSH Guide changes.
 
 ## How it works (technical)
 
-> See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deeper dive with a
-> request-lifecycle diagram.
+Four things explain most of the setup decisions above. Each is covered in depth in
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**, which also has component and
+request-lifecycle diagrams.
 
-### Container-to-container networking
-
-`docker compose` puts all services on one private network and gives each
-container a hostname equal to its service name. So from *inside* a container,
-`radarr` resolves to the Radarr container the same way `google.com` resolves to
-Google — but `localhost` only ever means "myself." That's why app-to-app config
-(Prowlarr → Radarr/Sonarr, indexer → FlareSolverr) uses names like
-`http://radarr:7878`, while *you* (outside Docker, in a browser) use
-`http://localhost:7878`.
-
-### Why one shared `/data` folder
-
-Radarr/Sonarr/qBittorrent all mount the exact same host path (`DATA_ROOT`) at
-`/data`. When qBittorrent finishes a download in `/data/torrents/...`, Radarr/Sonarr
-can **hardlink** it into `/data/media/...` — this creates a second filename pointing
-at the same bytes on disk, instantly, with zero extra disk space used. Hardlinks only
-work when both paths are on the *same filesystem*, which is why everything shares one
-root instead of separate volumes per app.
-
-### API keys
-
-Each app (Radarr, Sonarr, Prowlarr, qBittorrent) protects its API with a key/password
-so only authorized apps (or you) can control it. When Prowlarr "connects" to Radarr,
-it's really just calling Radarr's HTTP API using that key, the same way a script would.
-
-### PUID / PGID / TZ
-
-linuxserver.io images (used for all 5 services) run their internal process as a
-specific Linux user/group, controlled by `PUID`/`PGID`. Matching these to your host
-user (`id -u` / `id -g`) means files these containers create in `/data` are owned by
-you, not root — so you can browse/delete them normally outside Docker. `TZ` just
-keeps logs and scheduling (e.g. Radarr's RSS sync) in your local time instead of UTC.
-
-### FlareSolverr
-
-Some indexer sites (e.g. 1337x) use Cloudflare's bot-detection, which resets
-connections from plain HTTP clients (like Prowlarr's) based on TLS fingerprint —
-this looks like a network error but isn't. FlareSolverr runs a real headless browser
-that passes Cloudflare's challenge and hands the resulting page back to Prowlarr.
-Add it once under **Settings → Indexer Proxies** (host `http://flaresolverr:8191`),
-then assign it to any indexer that fails with a Cloudflare-shaped error.
+- **`localhost` vs container names** — containers reach each other by service name
+  (`http://radarr:7878`); inside a container `localhost` means only itself. Your
+  browser, being outside Docker, uses `http://localhost:7878`. This is the #1 source
+  of "can't connect" mistakes when wiring the apps together.
+  → [Networking model](docs/ARCHITECTURE.md#networking-model)
+- **One shared `/data` root** — lets Radarr/Sonarr *hardlink* finished downloads into
+  the library instead of copying: instant, zero extra disk space, and qBittorrent
+  keeps seeding the same bytes. Requires one filesystem, hence one root.
+  → [Storage model](docs/ARCHITECTURE.md#storage-model-why-hardlinks-instead-of-copies)
+- **`PUID`/`PGID`/`TZ`** — make container-written files owned by your host user rather
+  than root, and keep logs/scheduling on local time.
+  → [Identity and permissions](docs/ARCHITECTURE.md#identity-and-permissions-puid-pgid-tz)
+- **FlareSolverr** — a real headless browser that clears Cloudflare bot-checks for
+  indexers whose TLS fingerprinting rejects plain HTTP clients. Register once under
+  **Settings → Indexer Proxies** (`http://flaresolverr:8191`), then attach it to any
+  indexer failing with a Cloudflare-shaped error.
+  → [Why FlareSolverr exists](docs/ARCHITECTURE.md#why-flaresolverr-exists)
 
 ## Troubleshooting
 
@@ -232,6 +226,28 @@ then assign it to any indexer that fails with a Cloudflare-shaped error.
   key/passkey, not anything in this stack. Log into the tracker site directly, find
   your API key under your profile/security settings, and re-paste it into Prowlarr's
   indexer config.
+- **`Could not find a part of the path '/data/media/movies/<Title> (Year)'`** on
+  import — the "release" was actually a raw Blu-ray disc dump (a `BDMV/STREAM/*.m2ts`
+  tree), not a single video file, so Radarr had nothing importable to rename. TRaSH's
+  **BR-DISK** custom format is scored `-10000` to reject these, but custom formats
+  match on the *release title text* — a disc dump whose title looks like a normal
+  encode slips through and is only detectable after downloading. Fix: remove the queue
+  item with **Blocklist and Search** so Radarr won't re-grab it and searches for a
+  replacement.
+- **Torrent stuck at 0% in `metaDL` state forever** — the magnet link has no reachable
+  peers, so qBittorrent can't even fetch metadata. Note that Radarr's
+  `autoRedownloadFailed` only fires on downloads the client reports as *failed*; a
+  perpetually-stalled torrent is never "failed", so it sits there indefinitely and
+  needs manual removal (**Blocklist and Search**). Check real seed counts with:
+  ```
+  docker exec qbittorrent curl -s -b /tmp/qb.cookie \
+    http://localhost:8080/api/v2/torrents/info
+  ```
+- **Downloads are slow rather than stuck** — this is release availability, not client
+  config. Speed is capped by how many seeders the chosen release has. Add more
+  indexers so Radarr/Sonarr have a deeper pool to pick from; private trackers help
+  most, since enforced seeding ratios keep releases alive for years where public
+  torrents die off.
 
 ## Notes
 
