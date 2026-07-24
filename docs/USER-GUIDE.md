@@ -154,6 +154,16 @@ the Jellyfin container).
 | Works at home, fails outside | You tested over LAN; retry on mobile data with Wi-Fi off |
 | Name will not resolve | Use the raw `100.126.149.22` address; reconnect Tailscale |
 | Connects but playback stalls | Upload bandwidth or CPU transcode — lower the bitrate cap |
+| **Tailscale shows the PC online, but Jellyfin times out** | **The PC rebooted and WSL is not running** — Docker lives inside WSL, so no services are up. Start a WSL terminal on the PC, or set it to auto-start: see [after a reboot](REMOTE-ACCESS.md#after-a-reboot) |
+| Tailscale shows the PC offline | The PC is off or asleep — it cannot be woken over the tailnet |
+
+### After restarting the PC
+
+You never need to log into Tailscale again — it rejoins automatically with the same
+address. But **WSL does not start on its own**, and Docker runs inside it, so the
+services stay down until WSL boots. Open any WSL terminal on the PC, or make it
+automatic with the one-off scheduled task in
+[REMOTE-ACCESS.md → After a reboot](REMOTE-ACCESS.md#after-a-reboot).
 
 Full details, architecture diagrams, and the security notes are in
 **[REMOTE-ACCESS.md](REMOTE-ACCESS.md)**.

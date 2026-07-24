@@ -308,6 +308,75 @@ unreachable even locally.
 
 ---
 
+## After a reboot
+
+Nothing needs re-authenticating — Tailscale stores its node key, so the machine
+rejoins the tailnet on its own with the same IP and MagicDNS name. You never repeat
+the login step.
+
+What actually happens on this host, verified:
+
+| Component | Restarts by itself? | Mechanism |
+|---|---|---|
+| Tailscale (Windows) | Yes | Windows service, `StartType: Automatic` |
+| Docker daemon | Yes | `systemctl is-enabled docker` → `enabled` |
+| All containers | Yes | `restart: unless-stopped` in `docker-compose.yml` |
+| **WSL2 itself** | **No** | Windows does not start WSL at boot by default |
+
+That last row is the catch. **Docker runs inside WSL**, so if WSL is not running,
+none of the services are running either — even though Tailscale is happily online and
+the machine appears connected in the admin console. Symptom: the peer shows as
+online, but `http://admin-pc.tail9dbb76.ts.net:8096` times out.
+
+### Quick fix — start WSL
+
+Opening any WSL terminal on the Windows machine boots the distro; systemd then starts
+Docker, and the containers come back on their own. From PowerShell:
+
+```powershell
+wsl.exe -d Ubuntu -u root /bin/true
+```
+
+Give it 30–60 seconds, then confirm:
+
+```
+docker compose ps
+```
+
+### Permanent fix — start WSL automatically at logon
+
+So you never have to think about it, register a scheduled task **once** (run in
+PowerShell on Windows):
+
+```powershell
+schtasks /create /tn "Start WSL" /tr "wsl.exe -d Ubuntu -u root /bin/true" /sc onlogon /rl highest /f
+```
+
+WSL then boots at logon, systemd starts Docker, and the stack is up before you reach
+for your phone. Because `systemd=true` is set in `/etc/wsl.conf`, systemd keeps
+running as PID 1 and holds the distro open — WSL does not idle out and shut the
+containers down.
+
+> Note this triggers **at logon**, not at power-on, so the machine still needs someone
+> to log into Windows after a reboot. For a genuinely headless server you would want
+> `/sc onstart` with a stored account, or to move the stack off WSL onto a Linux host.
+
+### Checking remotely when something is wrong
+
+If a film will not load while you are out, this ordering tells you where the problem
+is:
+
+1. **Tailscale app on the phone** — is the peer listed and online? If not, the Windows
+   machine is off or asleep. Nothing else can be diagnosed remotely.
+2. **Peer online but Jellyfin times out** — almost always WSL is not running. Requires
+   physical or remote-desktop access to the machine to start it.
+3. **Jellyfin loads but playback stalls** — bandwidth or transcoding, not the network
+   path. See below.
+
+Worth knowing: a sleeping or powered-off machine cannot be woken through Tailscale.
+If you want reliable access while away, disable sleep on the host — or at minimum
+know that "peer offline" means the PC itself is unavailable.
+
 ## Streaming quality when away from home
 
 Remote playback is limited by your **home upload** bandwidth, which on most consumer
