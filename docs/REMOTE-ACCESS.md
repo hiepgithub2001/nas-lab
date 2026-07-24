@@ -32,12 +32,67 @@ configuration is needed, and it works from behind CGNAT/mobile networks.
 
 ## How it will work
 
-```
-Your phone (Tailscale on)  ──encrypted tailnet──▶  Home machine  ──▶  Jellyfin :8096
-```
-
 Your server joins the tailnet once. Every device you want to watch on also joins.
 They then talk directly and privately, wherever they are.
+
+```mermaid
+flowchart LR
+    subgraph Away["Away from home"]
+        Phone["Your phone<br/>Tailscale + Jellyfin app"]
+    end
+
+    subgraph TS["Tailnet — private, encrypted, your devices only"]
+        direction TB
+        Coord["Tailscale coordination<br/>(key exchange + NAT traversal only)"]
+    end
+
+    subgraph Home["Home machine (Windows)"]
+        direction TB
+        TSWin["Tailscale client<br/>100.x.y.z"]
+        subgraph WSL["WSL2 — networkingMode: mirrored"]
+            direction TB
+            Docker["Docker services bound to 0.0.0.0<br/>Jellyfin :8096 · Radarr :7878 · Sonarr :8989<br/>Prowlarr :9696 · Bazarr :6767 · qBittorrent :8080"]
+        end
+    end
+
+    Phone -- "http://100.x.y.z:8096" --> TSWin
+    Phone -.->|"finds peer via"| Coord
+    TSWin -.->|"registers with"| Coord
+    TSWin -- "mirrored networking<br/>(no port forwarding needed)" --> Docker
+
+    Internet(["Public internet"])
+    Internet -. "no inbound path —<br/>router ports stay closed" .-x Home
+```
+
+Two things to read off the diagram:
+
+- **The coordination server only brokers the connection.** It exchanges keys and helps
+  the two devices find each other through NAT. Your video traffic goes **directly**
+  phone→home, encrypted end to end; it does not flow through Tailscale's servers.
+  (The exception is a `relay` fallback when hole-punching fails — see Troubleshooting.)
+- **Nothing is wired per application.** Tailscale gives the *machine* an extra IP.
+  Every service already listening on `0.0.0.0` is reachable on it automatically, which
+  is why no container, compose file, or reverse proxy needs changing.
+
+### What the request actually traverses
+
+```mermaid
+sequenceDiagram
+    participant Phone as Jellyfin app (mobile data)
+    participant TS as Tailscale (both ends)
+    participant Win as Windows host
+    participant WSL as WSL2 (mirrored)
+    participant JF as Jellyfin container
+    participant Disk as /data/media
+
+    Phone->>TS: Connect to 100.x.y.z:8096
+    Note over TS: WireGuard tunnel,<br/>direct peer-to-peer if possible
+    TS->>Win: Encrypted packet arrives on tailscale interface
+    Win->>WSL: Mirrored networking — same interfaces, no portproxy
+    WSL->>JF: Docker published port 8096
+    JF->>Disk: Read film + subtitles
+    JF-->>Phone: Stream (direct play, or transcode if unsupported)
+```
 
 ## Which machine runs Tailscale
 
@@ -68,6 +123,19 @@ stack to a Linux host later.
 ---
 
 ## Option A — Tailscale on Windows (recommended)
+
+> **This is what is set up on this machine.** Installed via
+> `winget install --id Tailscale.Tailscale`. Verified working:
+>
+> | | |
+> |---|---|
+> | Machine | `Admin-PC` |
+> | Tailnet IP | `100.126.149.22` |
+> | MagicDNS | `admin-pc.tail9dbb76.ts.net` |
+> | Jellyfin | `http://admin-pc.tail9dbb76.ts.net:8096` |
+>
+> All six web UIs answer on the tailnet address with no compose changes, no port
+> forwarding, and no reverse proxy — confirming the mirrored-networking assumption.
 
 ### 1. Install and sign in on the server
 
