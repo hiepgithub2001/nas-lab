@@ -17,13 +17,13 @@ Almost everything restarts by itself:
 
 | | Restarts automatically? |
 |---|---|
-| Tailscale (remote access) | Yes — Windows service, and it never needs re-authenticating |
-| Docker daemon | Yes — enabled in systemd |
+| `tailscaled` (remote access) | Yes, once WSL runs — never needs re-authenticating |
+| Docker daemon | Yes, once WSL runs — enabled in systemd |
 | All 8 containers | Yes — `restart: unless-stopped` |
 | **WSL2 itself** | **No** — Windows does not start it at boot |
 
-Since Docker runs *inside* WSL, nothing is actually up until WSL starts. The confusing
-part: Tailscale reports the machine **online** while every service times out.
+Everything runs *inside* WSL — Tailscale included — so nothing is up until WSL starts.
+Symptom from your phone: the machine shows **offline** in the Tailscale app.
 
 **Start WSL** — open Windows Terminal / Ubuntu, or from PowerShell:
 
@@ -60,7 +60,7 @@ not power-on, so someone still has to sign into Windows.
 | | |
 |---|---|
 | Watch | http://localhost:8096 |
-| Watch remotely | `http://admin-pc.tail9dbb76.ts.net:8096` |
+| Watch remotely | `http://admin-pc-1.tail9dbb76.ts.net:8096` |
 | Add a film | http://localhost:7878 |
 | Logins | [`CREDENTIALS.md`](CREDENTIALS.md) |
 

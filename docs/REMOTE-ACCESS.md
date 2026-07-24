@@ -46,19 +46,19 @@ flowchart LR
         Coord["Tailscale coordination<br/>(key exchange + NAT traversal only)"]
     end
 
-    subgraph Home["Home machine (Windows)"]
+    subgraph Home["Home machine (Windows host)"]
         direction TB
-        TSWin["Tailscale client<br/>100.x.y.z"]
-        subgraph WSL["WSL2 — networkingMode: mirrored"]
+        subgraph WSL["WSL2 — Ubuntu"]
             direction TB
+            TSD["tailscaled<br/>admin-pc-1 · 100.69.57.57"]
             Docker["Docker services bound to 0.0.0.0<br/>Jellyfin :8096 · Radarr :7878 · Sonarr :8989<br/>Prowlarr :9696 · Bazarr :6767 · qBittorrent :8080"]
         end
     end
 
-    Phone -- "http://100.x.y.z:8096" --> TSWin
+    Phone -- "http://100.69.57.57:8096" --> TSD
     Phone -.->|"finds peer via"| Coord
-    TSWin -.->|"registers with"| Coord
-    TSWin -- "mirrored networking<br/>(no port forwarding needed)" --> Docker
+    TSD -.->|"registers with"| Coord
+    TSD -- "same network namespace<br/>(no port forwarding needed)" --> Docker
 
     Internet(["Public internet"])
     Internet -. "no inbound path —<br/>router ports stay closed" .-x Home
@@ -80,16 +80,14 @@ Two things to read off the diagram:
 sequenceDiagram
     participant Phone as Jellyfin app (mobile data)
     participant TS as Tailscale (both ends)
-    participant Win as Windows host
-    participant WSL as WSL2 (mirrored)
+    participant TSD as tailscaled in WSL
     participant JF as Jellyfin container
     participant Disk as /data/media
 
-    Phone->>TS: Connect to 100.x.y.z:8096
+    Phone->>TS: Connect to 100.69.57.57:8096
     Note over TS: WireGuard tunnel,<br/>direct peer-to-peer if possible
-    TS->>Win: Encrypted packet arrives on tailscale interface
-    Win->>WSL: Mirrored networking — same interfaces, no portproxy
-    WSL->>JF: Docker published port 8096
+    TS->>TSD: Encrypted packet arrives on tailscale0
+    TSD->>JF: Docker published port 8096 — same namespace, no portproxy
     JF->>Disk: Read film + subtitles
     JF-->>Phone: Stream (direct play, or transcode if unsupported)
 ```
@@ -98,7 +96,7 @@ sequenceDiagram
 
 **1. Each device gets an identity, not a port.**
 Installing Tailscale and signing in registers the machine with your tailnet. It is
-issued a stable address from the `100.64.0.0/10` range (this host: `100.126.149.22`)
+issued a stable address from the `100.64.0.0/10` range (this host: `100.69.57.57`)
 that belongs to the *machine*, not to any service. The address does not change when
 you move networks — the same `100.x` works on home Wi-Fi, mobile data, or a café.
 
@@ -106,12 +104,12 @@ you move networks — the same `100.x` works on home Wi-Fi, mobile data, or a ca
 This is the part that surprises people. Tailscale creates a virtual network
 interface; anything already listening on `0.0.0.0` is reachable through it
 immediately. Jellyfin was bound to `0.0.0.0:8096` before Tailscale existed, so it
-became reachable at `100.126.149.22:8096` the moment the machine joined — no config,
+became reachable at `100.69.57.57:8096` the moment the machine joined — no config,
 no reverse proxy, no per-app step. Verified here: all six web UIs answered on the
 tailnet address with no changes to `docker-compose.yml`.
 
 **3. Connections are brokered, then made directly.**
-When your phone opens `100.126.149.22:8096`, Tailscale's coordination server helps
+When your phone opens `100.69.57.57:8096`, Tailscale's coordination server helps
 the two devices find each other and exchange public keys — then gets out of the way.
 The actual tunnel is **WireGuard**, encrypted end-to-end between your phone and your
 machine. Your film does not stream through Tailscale's infrastructure.
@@ -131,61 +129,61 @@ internet. This is the entire security argument for choosing it over forwarding
 port 8096.
 
 **6. MagicDNS gives the machine a name.**
-Rather than memorising `100.126.149.22`, Tailscale's DNS resolves
-`admin-pc.tail9dbb76.ts.net` inside the tailnet. Names survive address changes, so
+Rather than memorising `100.69.57.57`, Tailscale's DNS resolves
+`admin-pc-1.tail9dbb76.ts.net` inside the tailnet. Names survive address changes, so
 clients configured with the name keep working.
 
 ### Why this works here without any port forwarding
 
-One local detail makes it seamless. Jellyfin runs in Docker **inside WSL2**, which
-would normally sit behind its own NAT — traffic arriving on Windows would need
-`netsh portproxy` forwarding to reach it.
+Tailscale runs **inside WSL**, in the same Linux environment as Docker. That is the
+simplest arrangement: `tailscale0` and the container ports live in one network
+namespace, so anything bound to `0.0.0.0` is immediately reachable on the tailnet
+address with no forwarding of any kind.
 
-This WSL instance runs with `networkingMode=mirrored` (see `/etc/wsl.conf`), meaning
-WSL shares the Windows host's network interfaces instead of getting a private
-subnet. So when Tailscale creates its interface on Windows, the WSL-bound container
-ports are already reachable on it. That is why installing Tailscale on Windows
-required zero changes on the Linux side.
+(The alternative — the Tailscale client on Windows — also works here, because this
+WSL instance runs `networkingMode=mirrored` and therefore shares the Windows network
+interfaces rather than sitting behind its own NAT. Without mirrored mode that route
+would need `netsh portproxy` forwarding.)
 
 ## Setup
 
-Tailscale runs on the **Windows host**, not inside WSL or as a container. That is the
-right place here: it starts as a Windows service independently of WSL, so remote
-access does not depend on the Docker stack being up, and thanks to mirrored
-networking it reaches the containers with no extra plumbing.
+Tailscale runs **inside WSL**, installed with the standard Linux package. It is
+managed by systemd, so it starts automatically whenever WSL starts.
 
-> **Already done on this machine**, installed with
-> `winget install --id Tailscale.Tailscale`:
+> **Already done on this machine.** Verified:
 >
 > | | |
 > |---|---|
-> | Machine | `Admin-PC` |
-> | Tailnet IP | `100.126.149.22` |
-> | MagicDNS | `admin-pc.tail9dbb76.ts.net` |
-> | Jellyfin | `http://admin-pc.tail9dbb76.ts.net:8096` |
+> | Node | `admin-pc-1` (Linux / WSL) |
+> | Tailnet IP | `100.69.57.57` |
+> | MagicDNS | `admin-pc-1.tail9dbb76.ts.net` |
+> | Jellyfin | `http://admin-pc-1.tail9dbb76.ts.net:8096` |
 >
-> Verified: all six web UIs answer on the tailnet address with no compose changes, no
-> port forwarding and no reverse proxy. MagicDNS is enabled.
+> All six web UIs answer on the tailnet address and via MagicDNS, with no compose
+> changes, no port forwarding and no reverse proxy.
 
 ### 1. Install and sign in on the server
 
-```powershell
-winget install --id Tailscale.Tailscale --accept-package-agreements
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo systemctl enable --now tailscaled
 ```
 
 Then authenticate — this prints a URL to open in a browser:
 
-```powershell
-& "C:\Program Files\Tailscale\tailscale.exe" up --unattended
+```bash
+sudo tailscale up
 ```
 
 The account you sign in with **is** your tailnet; use the same one on every device.
-`--unattended` keeps the machine connected without a logged-in user.
+There is no `--unattended` flag on Linux (that one is Windows-only) — `tailscaled`
+runs as a system service, so it stays connected without anyone logged in.
 
 Confirm, and note the address:
 
-```powershell
-& "C:\Program Files\Tailscale\tailscale.exe" status
+```bash
+tailscale status
+tailscale ip -4
 ```
 
 ### 2. Add the devices you want to watch on
@@ -201,8 +199,8 @@ most common mistake.
 ### 3. Point Jellyfin clients at the server
 
 ```
-http://admin-pc.tail9dbb76.ts.net:8096
-http://100.126.149.22:8096              (if the name will not resolve)
+http://admin-pc-1.tail9dbb76.ts.net:8096
+http://100.69.57.57:8096              (if the name will not resolve)
 ```
 
 Do **not** use `localhost` — on a phone that means the phone itself. Do not use
@@ -231,15 +229,20 @@ What actually happens on this host, verified:
 
 | Component | Restarts by itself? | Mechanism |
 |---|---|---|
-| Tailscale (Windows) | Yes | Windows service, `StartType: Automatic` |
-| Docker daemon | Yes | `systemctl is-enabled docker` → `enabled` |
+| `tailscaled` | Yes, **once WSL is running** | `systemctl is-enabled tailscaled` → `enabled` |
+| Docker daemon | Yes, once WSL is running | `systemctl is-enabled docker` → `enabled` |
 | All containers | Yes | `restart: unless-stopped` in `docker-compose.yml` |
 | **WSL2 itself** | **No** | Windows does not start WSL at boot by default |
 
-That last row is the catch. **Docker runs inside WSL**, so if WSL is not running,
-none of the services are running either — even though Tailscale is happily online and
-the machine appears connected in the admin console. Symptom: the peer shows as
-online, but `http://admin-pc.tail9dbb76.ts.net:8096` times out.
+Everything hangs off that last row: **Tailscale and Docker both live inside WSL**, so
+until WSL starts, neither is running.
+
+One upside of this arrangement — diagnosis is unambiguous. Because Tailscale goes down
+*with* the stack, the machine simply shows as **offline** in your phone's Tailscale
+app. There is no confusing state where the peer looks online but every port times out
+(which is exactly what happens when Tailscale runs on the Windows side instead).
+
+**Peer offline ⇒ WSL is not running** (or the PC is off).
 
 ### Quick fix — start WSL
 

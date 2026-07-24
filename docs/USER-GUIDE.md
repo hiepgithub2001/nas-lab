@@ -95,8 +95,8 @@ This machine on the tailnet:
 
 | | |
 |---|---|
-| Name | `admin-pc.tail9dbb76.ts.net` |
-| IP | `100.126.149.22` |
+| Name | `admin-pc-1.tail9dbb76.ts.net` |
+| IP | `100.69.57.57` |
 | Account | the Google account used at setup |
 
 #### Add a phone or tablet
@@ -109,9 +109,9 @@ This machine on the tailnet:
    accept it.
 4. Install the **Jellyfin** app and add the server:
    ```
-   http://admin-pc.tail9dbb76.ts.net:8096
+   http://admin-pc-1.tail9dbb76.ts.net:8096
    ```
-   (or `http://100.126.149.22:8096` if the name does not resolve)
+   (or `http://100.69.57.57:8096` if the name does not resolve)
 5. Log in with your Jellyfin account.
 
 Leave Tailscale connected whenever you want remote access. Battery cost is small —
@@ -128,12 +128,12 @@ Same address, different port — useful for queueing a film from your phone whil
 
 | App | Remote URL |
 |---|---|
-| Jellyfin | `http://admin-pc.tail9dbb76.ts.net:8096` |
-| Radarr | `http://admin-pc.tail9dbb76.ts.net:7878` |
-| Sonarr | `http://admin-pc.tail9dbb76.ts.net:8989` |
-| Prowlarr | `http://admin-pc.tail9dbb76.ts.net:9696` |
-| Bazarr | `http://admin-pc.tail9dbb76.ts.net:6767` |
-| qBittorrent | `http://admin-pc.tail9dbb76.ts.net:8080` |
+| Jellyfin | `http://admin-pc-1.tail9dbb76.ts.net:8096` |
+| Radarr | `http://admin-pc-1.tail9dbb76.ts.net:7878` |
+| Sonarr | `http://admin-pc-1.tail9dbb76.ts.net:8989` |
+| Prowlarr | `http://admin-pc-1.tail9dbb76.ts.net:9696` |
+| Bazarr | `http://admin-pc-1.tail9dbb76.ts.net:6767` |
+| qBittorrent | `http://admin-pc-1.tail9dbb76.ts.net:8080` |
 
 #### Streaming quality when away
 
@@ -152,18 +152,21 @@ the Jellyfin container).
 |---|---|
 | Cannot reach the server at all | Tailscale toggle off on one end — check both show connected |
 | Works at home, fails outside | You tested over LAN; retry on mobile data with Wi-Fi off |
-| Name will not resolve | Use the raw `100.126.149.22` address; reconnect Tailscale |
+| Name will not resolve | Use the raw `100.69.57.57` address; reconnect Tailscale |
 | Connects but playback stalls | Upload bandwidth or CPU transcode — lower the bitrate cap |
-| **Tailscale shows the PC online, but Jellyfin times out** | **The PC rebooted and WSL is not running** — Docker lives inside WSL, so no services are up. Start a WSL terminal on the PC, or set it to auto-start: see [after a reboot](REMOTE-ACCESS.md#after-a-reboot) |
-| Tailscale shows the PC offline | The PC is off or asleep — it cannot be woken over the tailnet |
+| **Tailscale shows the PC offline** | Either the PC is off/asleep, or it rebooted and **WSL is not running** — Tailscale runs inside WSL, so it goes down with the stack. Start a WSL terminal on the PC: see [after a reboot](REMOTE-ACCESS.md#after-a-reboot) |
 
 ### After restarting the PC
 
 You never need to log into Tailscale again — it rejoins automatically with the same
-address. But **WSL does not start on its own**, and Docker runs inside it, so the
-services stay down until WSL boots. Open any WSL terminal on the PC, or make it
-automatic with the one-off scheduled task in
+address. But **WSL does not start on its own**, and both Tailscale and Docker run
+inside it, so the machine stays offline until WSL boots. Open any WSL terminal on the
+PC, or make it automatic with the one-off scheduled task in
 [REMOTE-ACCESS.md → After a reboot](REMOTE-ACCESS.md#after-a-reboot).
+
+Because Tailscale goes down together with everything else, diagnosis is simple: if the
+machine shows **offline** in your phone's Tailscale app, WSL is not running (or the PC
+is off). There is no state where it looks connected but nothing responds.
 
 Full details, architecture diagrams, and the security notes are in
 **[REMOTE-ACCESS.md](REMOTE-ACCESS.md)**.
