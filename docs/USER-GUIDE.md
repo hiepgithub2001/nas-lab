@@ -87,6 +87,68 @@ exposed to the public internet.
 
 ---
 
+## Subtitles
+
+Subtitles are handled by **Bazarr** → http://localhost:6767. It watches everything in
+Radarr and Sonarr, searches subtitle providers, and drops `.srt` files next to each
+video. Jellyfin picks those up automatically — no per-film work once it's configured.
+
+### One-time setup
+
+**1. Languages** — **Settings → Languages**:
+
+- Add the languages you want (e.g. `Vietnamese`, `English`).
+- Create a **Language Profile** containing them, in priority order.
+- Set that profile as the default for **Series** and **Movies** so newly added items
+  inherit it automatically.
+
+**2. Providers** — **Settings → Providers**. Add at least two; each has its own
+coverage and rate limits, so one alone will leave gaps.
+
+- **OpenSubtitles.com** — the broadest catalogue, good Vietnamese coverage.
+  Requires a free account, and you must log in on their site once before the API
+  works. The free tier has a daily download quota.
+- **Podnapisi**, **Subscene**, **BSplayer** — no account needed, useful as backups.
+
+**3. Connect to Radarr and Sonarr** — **Settings → Radarr** / **Settings → Sonarr**:
+
+| Field | Value |
+|---|---|
+| Address | `radarr` / `sonarr` (container name, not `localhost`) |
+| Port | `7878` / `8989` |
+| API key | see `CREDENTIALS.md` |
+
+Leave path mapping **empty**. Bazarr mounts the same `/data` as Radarr and Sonarr, so
+the paths they report already resolve correctly — verified. Path mapping is only for
+setups where the apps disagree about where files live.
+
+Click **Test**, then **Save**, then restart Bazarr when it asks.
+
+### Everyday use
+
+Once set up it runs by itself: Bazarr checks new imports, downloads the best matching
+subtitle, and retries on a schedule for anything it couldn't find (subtitles often
+appear days after a release).
+
+To intervene on a single film — open it in Bazarr and either:
+
+- **Search** (magnifying glass) — pick from available subtitles manually, useful when
+  the automatic pick is out of sync.
+- **Upload** — supply your own `.srt`.
+
+**Wrong timing?** Subtitles are cut for a specific release. A subtitle timed for the
+Theatrical cut will drift on an Extended cut. Fix by picking a subtitle whose release
+name matches your file, or nudge it in Jellyfin's player (subtitle offset).
+
+### Watching with subtitles in Jellyfin
+
+During playback, click the **speech-bubble icon** → choose your subtitle track. Set a
+default so you don't repeat it every time: **Profile → Settings → Subtitles →
+preferred language + "Always play subtitles"** if you want them on by default.
+
+If a subtitle exists on disk but Jellyfin doesn't list it, refresh that item's
+metadata (**⋯ → Refresh metadata**) so Jellyfin rescans for sidecar files.
+
 ## Following a download
 
 Three places to look, in order of usefulness:

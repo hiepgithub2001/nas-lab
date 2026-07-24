@@ -11,6 +11,7 @@ setup steps.
 | Prowlarr     | `lscr.io/linuxserver/prowlarr`            | Indexer manager — searches trackers, feeds results to Radarr/Sonarr |
 | Radarr       | `lscr.io/linuxserver/radarr`              | Movie automation — wishlist, quality selection, import |
 | Sonarr       | `lscr.io/linuxserver/sonarr`              | TV automation — same role as Radarr, for shows |
+| Bazarr       | `lscr.io/linuxserver/bazarr`              | Subtitle automation — watches Radarr/Sonarr, writes `.srt` sidecars |
 | qBittorrent  | `lscr.io/linuxserver/qbittorrent`         | Download client — fetches the actual file via BitTorrent |
 | FlareSolverr | `ghcr.io/flaresolverr/flaresolverr`       | Headless-browser proxy — solves Cloudflare challenges for indexers that need it |
 | Jellyfin     | `lscr.io/linuxserver/jellyfin`            | Media server — serves the organized library for playback |
@@ -30,6 +31,7 @@ flowchart TB
         Prowlarr["Prowlarr<br/>:9696"]
         Radarr["Radarr<br/>:7878"]
         Sonarr["Sonarr<br/>:8989"]
+        Bazarr["Bazarr<br/>:6767"]
         qBit["qBittorrent<br/>:8080"]
         Flare["FlareSolverr<br/>:8191"]
         Jellyfin["Jellyfin<br/>:8096"]
@@ -46,6 +48,7 @@ flowchart TB
     You -- "localhost:9696" --> Prowlarr
     You -- "localhost:7878" --> Radarr
     You -- "localhost:8989" --> Sonarr
+    You -- "localhost:6767" --> Bazarr
     You -- "localhost:8080" --> qBit
     You -- "localhost:8096" --> Jellyfin
 
@@ -67,6 +70,12 @@ flowchart TB
     Sonarr -- "hardlink" --> Media
     Radarr -.->|reads| Torrents
     Sonarr -.->|reads| Torrents
+
+    Bazarr -- "API key: library + paths" --> Radarr
+    Bazarr -- "API key: library + paths" --> Sonarr
+    Bazarr -- "writes .srt sidecars" --> Media
+    SubProviders(["Subtitle providers<br/>(OpenSubtitles, Podnapisi, ...)"])
+    Bazarr -.->|search/download| SubProviders
 
     Jellyfin -- "reads" --> Media
 ```

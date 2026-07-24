@@ -16,7 +16,9 @@ Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 4. Radarr/Sonarr detect the finished download and **hardlink** it into
    `/data/media/movies` or `/data/media/tv` (renamed) — no duplicate disk usage,
    qBittorrent keeps seeding the original file.
-5. **Jellyfin** serves the organized `/data/media` library for playback.
+5. **Bazarr** notices the new file, fetches matching subtitles, and writes `.srt`
+   files alongside it.
+6. **Jellyfin** serves the organized `/data/media` library for playback.
 
 ## Folder structure
 
@@ -66,6 +68,7 @@ This brings up:
 | Prowlarr     | http://localhost:9696   | Indexer manager                                    |
 | Radarr       | http://localhost:7878   | Movie automation                                   |
 | Sonarr       | http://localhost:8989   | TV automation                                       |
+| Bazarr       | http://localhost:6767   | Subtitle automation for Radarr/Sonarr libraries      |
 | qBittorrent  | http://localhost:8080   | Download client                                     |
 | FlareSolverr | http://localhost:8191   | Cloudflare-challenge solver proxy for indexers      |
 | Jellyfin     | http://localhost:8096   | Media playback                                      |
