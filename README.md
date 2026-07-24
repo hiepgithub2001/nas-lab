@@ -115,9 +115,22 @@ add indexers separately in Radarr/Sonarr.
 
 ### 6. Configure Radarr/Sonarr
 
-- Root folder: `/data/media/movies` (Radarr) / `/data/media/tv` (Sonarr)
-- Download client: qBittorrent
-- Quality profiles / custom formats: per TRaSH Guides recommendations
+**Radarr** (http://localhost:7878):
+
+1. **Settings → Media Management → Root Folders** → **Add Root Folder** →
+   `/data/media/movies` → Save.
+2. **Settings → Download Clients** → **+** → **qBittorrent**:
+   - **Host:** `qbittorrent` (container name, not localhost)
+   - **Port:** `8080`
+   - **Username:** `admin`
+   - **Password:** (see local `CREDENTIALS.md`, not committed to git)
+   - **Test**, then **Save**.
+
+**Sonarr** (http://localhost:8989): same two steps, but:
+- Root folder: `/data/media/tv`
+- Download client: same qBittorrent host/port/credentials as above
+
+Quality profiles / custom formats (per TRaSH Guides recommendations):
 
 *(next step — not yet documented)*
 
