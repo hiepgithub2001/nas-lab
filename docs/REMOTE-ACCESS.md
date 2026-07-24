@@ -30,7 +30,7 @@ configuration is needed, and it works from behind CGNAT/mobile networks.
 > Jellyfin → **Dashboard → Users → admin → Password**. Then update
 > `CREDENTIALS.md`.
 
-## How it will work
+## How it works
 
 Your server joins the tailnet once. Every device you want to watch on also joins.
 They then talk directly and privately, wherever they are.
@@ -93,6 +93,59 @@ sequenceDiagram
     JF->>Disk: Read film + subtitles
     JF-->>Phone: Stream (direct play, or transcode if unsupported)
 ```
+
+### The mechanics, step by step
+
+**1. Each device gets an identity, not a port.**
+Installing Tailscale and signing in registers the machine with your tailnet. It is
+issued a stable address from the `100.64.0.0/10` range (this host: `100.126.149.22`)
+that belongs to the *machine*, not to any service. The address does not change when
+you move networks — the same `100.x` works on home Wi-Fi, mobile data, or a café.
+
+**2. Every service on that machine comes along for free.**
+This is the part that surprises people. Tailscale creates a virtual network
+interface; anything already listening on `0.0.0.0` is reachable through it
+immediately. Jellyfin was bound to `0.0.0.0:8096` before Tailscale existed, so it
+became reachable at `100.126.149.22:8096` the moment the machine joined — no config,
+no reverse proxy, no per-app step. Verified here: all six web UIs answered on the
+tailnet address with no changes to `docker-compose.yml`.
+
+**3. Connections are brokered, then made directly.**
+When your phone opens `100.126.149.22:8096`, Tailscale's coordination server helps
+the two devices find each other and exchange public keys — then gets out of the way.
+The actual tunnel is **WireGuard**, encrypted end-to-end between your phone and your
+machine. Your film does not stream through Tailscale's infrastructure.
+
+**4. NAT traversal replaces port forwarding.**
+Both devices sit behind NAT, so neither can normally accept an inbound connection.
+Tailscale hole-punches: both ends send outbound packets simultaneously, which makes
+each router accept the other's traffic. Because both connections are *outbound*, no
+router configuration and no open port is required. Where hole-punching fails (strict
+carrier-grade NAT), traffic falls back to an encrypted **DERP relay** — slower, still
+private, still works.
+
+**5. Access is limited to your own devices.**
+There is no public endpoint to discover. A device can only reach the tailnet after
+signing into your account, so the exposure is your own device list rather than the
+internet. This is the entire security argument for choosing it over forwarding
+port 8096.
+
+**6. MagicDNS gives the machine a name.**
+Rather than memorising `100.126.149.22`, Tailscale's DNS resolves
+`admin-pc.tail9dbb76.ts.net` inside the tailnet. Names survive address changes, so
+clients configured with the name keep working.
+
+### Why this works here without any port forwarding
+
+One local detail makes it seamless. Jellyfin runs in Docker **inside WSL2**, which
+would normally sit behind its own NAT — traffic arriving on Windows would need
+`netsh portproxy` forwarding to reach it.
+
+This WSL instance runs with `networkingMode=mirrored` (see `/etc/wsl.conf`), meaning
+WSL shares the Windows host's network interfaces instead of getting a private
+subnet. So when Tailscale creates its interface on Windows, the WSL-bound container
+ports are already reachable on it. That is why installing Tailscale on Windows
+required zero changes on the Linux side.
 
 ## Which machine runs Tailscale
 

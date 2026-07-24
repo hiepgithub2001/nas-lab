@@ -81,9 +81,82 @@ Point them at your machine's LAN address (`http://<your-ip>:8096`) rather than
 hostname -I
 ```
 
-Note this only works on the same network. To watch from outside your home, see
-**[REMOTE-ACCESS.md](REMOTE-ACCESS.md)** — set up with Tailscale, so nothing is
-exposed to the public internet.
+Note this only works on the same network. To watch from **outside** your home, see
+the next section.
+
+### Watching from outside your home (Tailscale VPN)
+
+Remote access uses [Tailscale](https://tailscale.com/), a private VPN between your
+own devices. Nothing is exposed to the public internet and no router configuration
+is involved. The server is **already set up** — you only need to add each device you
+want to watch on.
+
+This machine on the tailnet:
+
+| | |
+|---|---|
+| Name | `admin-pc.tail9dbb76.ts.net` |
+| IP | `100.126.149.22` |
+| Account | the Google account used at setup |
+
+#### Add a phone or tablet
+
+1. Install **Tailscale** — [Play Store](https://play.google.com/store/apps/details?id=com.tailscale.ipn)
+   / [App Store](https://apps.apple.com/app/tailscale/id1470499037).
+2. Sign in with **the same account used on the server**. A different account creates a
+   separate tailnet and nothing will connect — this is the most common mistake.
+3. Turn the VPN toggle **on**. Android/iOS will ask to allow a VPN configuration;
+   accept it.
+4. Install the **Jellyfin** app and add the server:
+   ```
+   http://admin-pc.tail9dbb76.ts.net:8096
+   ```
+   (or `http://100.126.149.22:8096` if the name does not resolve)
+5. Log in with your Jellyfin account.
+
+Leave Tailscale connected whenever you want remote access. Battery cost is small —
+it is idle unless traffic is flowing.
+
+#### Test it properly
+
+Turn **Wi-Fi off** and use mobile data. Testing on home Wi-Fi proves nothing, because
+the connection may simply be going over your LAN instead of the tailnet.
+
+#### Everything else is reachable too
+
+Same address, different port — useful for queueing a film from your phone while out:
+
+| App | Remote URL |
+|---|---|
+| Jellyfin | `http://admin-pc.tail9dbb76.ts.net:8096` |
+| Radarr | `http://admin-pc.tail9dbb76.ts.net:7878` |
+| Sonarr | `http://admin-pc.tail9dbb76.ts.net:8989` |
+| Prowlarr | `http://admin-pc.tail9dbb76.ts.net:9696` |
+| Bazarr | `http://admin-pc.tail9dbb76.ts.net:6767` |
+| qBittorrent | `http://admin-pc.tail9dbb76.ts.net:8080` |
+
+#### Streaming quality when away
+
+Remote playback is limited by your home **upload** bandwidth, which is far lower than
+download on most connections, and transcoding here is CPU-only (no GPU is passed into
+the Jellyfin container).
+
+- Set a **bitrate cap** in the Jellyfin app for remote playback — 4–8 Mbps for 1080p.
+- 4K HDR files (e.g. a 2160p remux) will not stream well to a phone regardless of
+  settings; they are tens of GB and force a heavy transcode. Prefer 1080p sources for
+  anything you plan to watch remotely.
+
+#### If it does not connect
+
+| Symptom | Fix |
+|---|---|
+| Cannot reach the server at all | Tailscale toggle off on one end — check both show connected |
+| Works at home, fails outside | You tested over LAN; retry on mobile data with Wi-Fi off |
+| Name will not resolve | Use the raw `100.126.149.22` address; reconnect Tailscale |
+| Connects but playback stalls | Upload bandwidth or CPU transcode — lower the bitrate cap |
+
+Full details, architecture diagrams, and the security notes are in
+**[REMOTE-ACCESS.md](REMOTE-ACCESS.md)**.
 
 ---
 
