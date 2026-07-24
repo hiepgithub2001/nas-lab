@@ -15,6 +15,52 @@ setup steps.
 | FlareSolverr | `ghcr.io/flaresolverr/flaresolverr`       | Headless-browser proxy — solves Cloudflare challenges for indexers that need it |
 | Jellyfin     | `lscr.io/linuxserver/jellyfin`            | Media server — serves the organized library for playback |
 
+## Component diagram
+
+```mermaid
+flowchart TB
+    You(["You (browser)"])
+
+    subgraph Docker["Docker bridge network (self-host-film)"]
+        Prowlarr["Prowlarr\n:9696"]
+        Radarr["Radarr\n:7878"]
+        Sonarr["Sonarr\n:8989"]
+        qBit["qBittorrent\n:8080"]
+        Flare["FlareSolverr\n:8191"]
+        Jellyfin["Jellyfin\n:8096"]
+    end
+
+    subgraph Storage["/data (shared host path, DATA_ROOT)"]
+        Media["media/movies, media/tv"]
+        Torrents["torrents/movies, torrents/tv"]
+    end
+
+    Internet(["Indexer sites\n(1337x, YTS, private trackers, ...)"])
+
+    You -- "localhost:9696..8096" --> Prowlarr
+    You --> Radarr
+    You --> Sonarr
+    You --> qBit
+    You --> Jellyfin
+
+    Prowlarr -- "API key" --> Radarr
+    Prowlarr -- "API key" --> Sonarr
+    Prowlarr -- "search / proxy" --> Flare
+    Flare -- "solved requests" --> Internet
+    Prowlarr -.->|direct requests| Internet
+
+    Radarr -- "send download" --> qBit
+    Sonarr -- "send download" --> qBit
+
+    qBit -- "writes" --> Torrents
+    Radarr -- "hardlink" --> Media
+    Sonarr -- "hardlink" --> Media
+    Radarr -.->|reads| Torrents
+    Sonarr -.->|reads| Torrents
+
+    Jellyfin -- "reads" --> Media
+```
+
 ## Request lifecycle
 
 ```mermaid
