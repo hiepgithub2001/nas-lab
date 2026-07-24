@@ -181,7 +181,45 @@ add indexers separately in Radarr/Sonarr.
 Re-run `docker compose run --rm recyclarr sync` any time to pick up upstream
 TRaSH Guide changes.
 
-### 7. Configure Jellyfin
+### 7. Configure Bazarr (subtitles)
+
+Bazarr watches the Radarr/Sonarr libraries and writes `.srt` files next to each video,
+which Jellyfin then picks up on its own. Do this after step 6 — it reads its library
+list from Radarr/Sonarr, so those must be working first.
+
+Open http://localhost:6767.
+
+1. **Settings → Languages**
+   - Add the languages you want (e.g. Vietnamese, English).
+   - Create a **Language Profile** containing them in priority order.
+   - Set it as the default profile for **Movies** and **Series**, so newly added
+     items inherit it automatically.
+2. **Settings → Providers** — add at least two; each has its own coverage and daily
+   limits, so a single provider will leave gaps.
+   - **OpenSubtitles.com** — broadest catalogue. Needs a free account, and you must
+     log in on their website once before the API will work.
+   - **Podnapisi** / **BSplayer** — no account, useful as fallbacks.
+3. **Settings → Radarr** and **Settings → Sonarr** — connect them:
+
+   | Field | Radarr | Sonarr |
+   |---|---|---|
+   | Address | `radarr` | `sonarr` |
+   | Port | `7878` | `8989` |
+   | API key | see `docs/CREDENTIALS.md` | see `docs/CREDENTIALS.md` |
+
+   Use the container names, not `localhost` (same reason as step 5). Leave **path
+   mappings empty** — Bazarr mounts the same `${DATA_ROOT}:/data` as Radarr/Sonarr,
+   so the paths they report already resolve correctly inside Bazarr.
+4. **Test** each connection, **Save**, and restart Bazarr when prompted.
+
+Bazarr then fills in subtitles for existing media and handles new imports
+automatically, retrying on a schedule for anything not yet available.
+
+> Bazarr has **no authentication configured by default**. That is acceptable while it
+> is bound to `localhost`, but set a username/password under **Settings → General →
+> Security** before enabling [remote access](docs/REMOTE-ACCESS.md).
+
+### 8. Configure Jellyfin
 
 1. Open http://localhost:8096 → first-run wizard: pick a language, create your
    admin account.
@@ -190,7 +228,8 @@ TRaSH Guide changes.
    - **Content type:** TV Shows → folder `/data/media/tv`
 3. Finish the wizard (remote access can stay off — only used via `localhost` here).
 4. New media appears automatically as Radarr/Sonarr import it, or trigger
-   **Dashboard → Libraries → Scan All Libraries** manually.
+   **Dashboard → Libraries → Scan All Libraries** manually. Subtitles fetched by
+   Bazarr show up as selectable tracks during playback.
 
 ## How it works (technical)
 
