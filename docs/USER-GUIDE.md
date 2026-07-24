@@ -93,36 +93,9 @@ Subtitles are handled by **Bazarr** → http://localhost:6767. It watches everyt
 Radarr and Sonarr, searches subtitle providers, and drops `.srt` files next to each
 video. Jellyfin picks those up automatically — no per-film work once it's configured.
 
-### One-time setup
-
-**1. Languages** — **Settings → Languages**:
-
-- Add the languages you want (e.g. `Vietnamese`, `English`).
-- Create a **Language Profile** containing them, in priority order.
-- Set that profile as the default for **Series** and **Movies** so newly added items
-  inherit it automatically.
-
-**2. Providers** — **Settings → Providers**. Add at least two; each has its own
-coverage and rate limits, so one alone will leave gaps.
-
-- **OpenSubtitles.com** — the broadest catalogue, good Vietnamese coverage.
-  Requires a free account, and you must log in on their site once before the API
-  works. The free tier has a daily download quota.
-- **Podnapisi**, **Subscene**, **BSplayer** — no account needed, useful as backups.
-
-**3. Connect to Radarr and Sonarr** — **Settings → Radarr** / **Settings → Sonarr**:
-
-| Field | Value |
-|---|---|
-| Address | `radarr` / `sonarr` (container name, not `localhost`) |
-| Port | `7878` / `8989` |
-| API key | see `CREDENTIALS.md` |
-
-Leave path mapping **empty**. Bazarr mounts the same `/data` as Radarr and Sonarr, so
-the paths they report already resolve correctly — verified. Path mapping is only for
-setups where the apps disagree about where files live.
-
-Click **Test**, then **Save**, then restart Bazarr when it asks.
+One-time setup (languages, providers, Radarr/Sonarr connections) is
+**[README step 7](../README.md#7-configure-bazarr-subtitles)**. The rest of this
+section assumes that is done.
 
 ### Everyday use
 

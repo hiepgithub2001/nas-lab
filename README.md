@@ -192,8 +192,14 @@ Open http://localhost:6767.
 1. **Settings → Languages**
    - Add the languages you want (e.g. Vietnamese, English).
    - Create a **Language Profile** containing them in priority order.
-   - Set it as the default profile for **Movies** and **Series**, so newly added
-     items inherit it automatically.
+   - **Enable "Default Language Profile" for both Movies and Series** and select that
+     profile.
+
+   > Do not skip that last part. Without it, newly added films arrive with **no**
+   > language profile, and Bazarr silently ignores anything that has none — no search,
+   > no error, nothing in the log. It is the single most common reason Bazarr "does
+   > nothing".
+
 2. **Settings → Providers** — add at least two; each has its own coverage and daily
    limits, so a single provider will leave gaps.
    - **OpenSubtitles.com** — broadest catalogue. Needs a free account, and you must
@@ -210,14 +216,55 @@ Open http://localhost:6767.
    Use the container names, not `localhost` (same reason as step 5). Leave **path
    mappings empty** — Bazarr mounts the same `${DATA_ROOT}:/data` as Radarr/Sonarr,
    so the paths they report already resolve correctly inside Bazarr.
-4. **Test** each connection, **Save**, and restart Bazarr when prompted.
 
-Bazarr then fills in subtitles for existing media and handles new imports
-automatically, retrying on a schedule for anything not yet available.
+   The **API key is mandatory**. Radarr/Sonarr run with Forms authentication, so a
+   blank key gets an HTTP 401 with an empty body, which surfaces only as an obscure
+   log error during the next sync:
 
-> Bazarr has **no authentication configured by default**. That is acceptable while it
-> is bound to `localhost`, but set a username/password under **Settings → General →
-> Security** before enabling [remote access](docs/REMOTE-ACCESS.md).
+   ```
+   ERROR (jobs_queue) - Exception raised while running function:
+   Expecting value: line 1 column 1 (char 0)
+   ```
+
+4. **Test** each connection, **Save**, then **restart Bazarr**:
+
+   ```
+   docker compose restart bazarr
+   ```
+
+   Connection settings are only read at startup — saving alone leaves the old values
+   live in memory. Confirm it worked by looking for both SignalR clients in the log:
+
+   ```
+   docker compose logs bazarr | grep SignalR
+   # BAZARR SignalR client for Radarr is connected and waiting for events.
+   # BAZARR SignalR client for Sonarr is connected and waiting for events.
+   ```
+
+   That message is the real proof the connection is good — the **Test** button
+   reports success even when the API key is wrong.
+
+### How to tell it is working
+
+Bazarr's movie and series lists stay **empty until something is actually imported**.
+It tracks media that exists on disk, not everything on your wishlist, so films still
+downloading will not appear. That is expected, not a fault.
+
+Once a download imports, Radarr notifies Bazarr over SignalR immediately, Bazarr
+searches your providers, and writes the `.srt` beside the video. It retries on a
+schedule for anything not yet available — subtitles are often uploaded days after a
+release, and Vietnamese coverage is thinner than English, so obscure titles may need
+a manual **Search** in Bazarr or your own `.srt`.
+
+Nothing needs to be connected to Jellyfin: Bazarr writes subtitle files into
+`/data/media`, and Jellyfin discovers them from disk during its normal scan. The
+shared mount *is* the integration.
+
+> Bazarr has **no authentication configured by default** (`auth.type = None`) — its
+> web UI is open to anyone who can reach port 6767, though its API stays key-protected.
+> Acceptable while bound to `localhost`; set a username/password under
+> **Settings → General → Security** before enabling
+> [remote access](docs/REMOTE-ACCESS.md).
 
 ### 8. Configure Jellyfin
 
