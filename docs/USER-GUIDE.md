@@ -81,8 +81,9 @@ Point them at your machine's LAN address (`http://<your-ip>:8096`) rather than
 hostname -I
 ```
 
-Note this only works on the same network. Reaching it from outside your home needs a
-VPN or reverse proxy, which this stack does not currently set up.
+Note this only works on the same network. To watch from outside your home, see
+**[REMOTE-ACCESS.md](REMOTE-ACCESS.md)** — set up with Tailscale, so nothing is
+exposed to the public internet.
 
 ---
 

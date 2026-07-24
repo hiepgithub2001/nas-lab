@@ -4,6 +4,7 @@ Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 [TRaSH Guides](https://trash-guides.info/).
 
 **Docs:** [User Guide](docs/USER-GUIDE.md) — adding films/shows and watching them ·
+[Remote Access](docs/REMOTE-ACCESS.md) — watching away from home via Tailscale ·
 [Architecture](docs/ARCHITECTURE.md) — how it works internally
 
 ## How it fits together
