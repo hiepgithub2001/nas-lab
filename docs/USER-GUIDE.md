@@ -285,7 +285,58 @@ docker exec radarr curl -s -H "X-Api-Key: <radarr-key>" \
 | `metaDL`, 0% , 0 seeds | Dead torrent, no peers — will never finish | Remove + **Blocklist and Search** |
 | Slow but progressing, few seeds | Poorly-seeded release; valid but may take days | Let it run, or blocklist to try another |
 | Warning icon on the queue row | Import failed | Hover for reason; often needs blocklist + search |
-| Finished in qBittorrent, absent from Jellyfin | Import or scan didn't happen | Check Radarr History, then scan Jellyfin |
+| Finished in qBittorrent, absent from Jellyfin | Import or scan didn't happen | Work through the checks below |
+
+## A film downloaded but isn't in Jellyfin
+
+Work **backwards** through the pipeline — each check tells you whether to look further
+back. In practice it is almost always step 4.
+
+**1 · Did it finish downloading?** — qBittorrent → http://localhost:8080
+`100%` with state `stalledUP` / `queuedUP` means done (it is seeding now). Still
+`downloading`, or stuck at `metaDL` with 0 seeds, and there is nothing else to check.
+
+**2 · Did Radarr/Sonarr import it?** — **Activity → History**, look for *imported*
+
+```
+docker exec radarr curl -s -H "X-Api-Key: <key>" \
+  http://localhost:7878/api/v3/movie | grep -o '"hasFile":[a-z]*'
+```
+
+`hasFile=false` while qBittorrent says 100% means the **import failed**. Check
+**Activity → Queue** for a warning icon and hover it for the reason — this is where a
+mislabelled Blu-ray disc dump shows up as
+`Could not find a part of the path '/data/media/movies/<Title> (Year)'`.
+
+**3 · Is the file actually in the library folder?**
+
+```
+ls "$DATA_ROOT/media/movies/"
+```
+
+Present here but missing from Jellyfin ⇒ purely a scan problem, go to step 4.
+Absent ⇒ the import did not really complete, go back to step 2.
+
+**4 · Force a Jellyfin scan.**
+**Dashboard → Libraries → Scan All Libraries.** If it appears, it was only ever a
+scan-timing problem.
+
+### Quick lookup
+
+| qBittorrent | Radarr `hasFile` | In Jellyfin | Meaning |
+|---|---|---|---|
+| <100% | false | no | Still downloading — wait |
+| 100% | **false** | no | **Import failed** — check the Radarr queue for the error |
+| 100% | true | **no** | **Scan issue** — force a scan |
+| 100% | true | yes | Working |
+
+> **This should now be rare.** Jellyfin's own scheduled scan only runs every 12 hours
+> and its real-time file watcher does not reliably catch imports on this filesystem,
+> which is why films used to sit invisible for hours. Radarr and Sonarr are now
+> configured with a **Jellyfin (MediaBrowser) connection** — `jellyfin:8096`, *Update
+> Library* enabled — so each import notifies Jellyfin immediately. If you find
+> yourself scanning manually again, check that connection under
+> **Settings → Connect** in Radarr/Sonarr.
 
 ## Rejecting a bad release and trying another
 

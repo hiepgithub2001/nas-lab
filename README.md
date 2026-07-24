@@ -282,6 +282,30 @@ shared mount *is* the integration.
    subtitles even when several tracks exist. See
    [watching with subtitles](docs/USER-GUIDE.md#watching-with-subtitles-in-jellyfin).
 
+### 7. Tell Radarr/Sonarr to notify Jellyfin
+
+Without this, an imported film can sit invisible in Jellyfin for hours: Jellyfin's
+scheduled scan runs only **every 12 hours**, and its real-time file watcher does not
+reliably catch imports on this filesystem. Wiring the notification makes new media
+appear immediately.
+
+1. In **Jellyfin → Dashboard → API Keys → +**, create a key (name it `Radarr`).
+2. In **Radarr → Settings → Connect → + → Emby / Jellyfin**:
+
+   | Field | Value |
+   |---|---|
+   | Host | `jellyfin` (container name) |
+   | Port | `8096` |
+   | API Key | the key from step 1 |
+   | Update Library | **on** |
+   | On Import / On Upgrade | **on** |
+
+   **Test**, then **Save**.
+3. Repeat in **Sonarr → Settings → Connect**. The same Jellyfin key works for both.
+
+A successful test means Jellyfin is reachable and the key was accepted. If you ever
+find yourself scanning the library by hand again, check this connection first.
+
 ## How it works (technical)
 
 Four things explain most of the setup decisions above. Each is covered in depth in

@@ -49,6 +49,7 @@ These are separate from the login password and act as full-access tokens.
 | Sonarr   | `312c9d0190bc4813a4b2e273c73e4020` |
 | Prowlarr | `94ddacac299c4d65b260f2110fa1b018` |
 | Bazarr   | `d6e7bd6213692e78782aa0d634bac173` |
+| Jellyfin | `3f9e151673bc446eab5fd83f752e9728` (created for Radarr/Sonarr library-update notifications) |
 
 Re-read them from disk at any time:
 
