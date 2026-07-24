@@ -48,13 +48,15 @@ docker compose up -d
 
 This brings up:
 
-| Service     | URL                     | Purpose                  |
-|-------------|-------------------------|---------------------------|
-| Prowlarr    | http://localhost:9696   | Indexer manager           |
-| Radarr      | http://localhost:7878   | Movie automation          |
-| Sonarr      | http://localhost:8989   | TV automation              |
-| qBittorrent | http://localhost:8080   | Download client            |
-| Jellyfin    | http://localhost:8096   | Media playback              |
+| Service      | URL                     | Purpose                                          |
+|--------------|-------------------------|----------------------------------------------------|
+| Prowlarr     | http://localhost:9696   | Indexer manager                                    |
+| Radarr       | http://localhost:7878   | Movie automation                                   |
+| Sonarr       | http://localhost:8989   | TV automation                                       |
+| qBittorrent  | http://localhost:8080   | Download client                                     |
+| FlareSolverr | http://localhost:8191   | Cloudflare-challenge solver proxy for indexers      |
+| Jellyfin     | http://localhost:8096   | Media playback                                      |
+| Recyclarr    | (no UI — CLI only)      | Syncs TRaSH quality profiles/custom formats on demand |
 
 ### 3. Configure qBittorrent
 
@@ -130,15 +132,41 @@ add indexers separately in Radarr/Sonarr.
 - Root folder: `/data/media/tv`
 - Download client: same qBittorrent host/port/credentials as above
 
-Quality profiles / custom formats (per TRaSH Guides recommendations):
+**Quality profiles / custom formats** are synced from TRaSH Guides via
+**Recyclarr** rather than configured by hand:
 
-*(next step — not yet documented)*
+1. Generate configs from the official templates (already done for this repo):
+   ```
+   docker compose run --rm recyclarr config create --template hd-bluray-web --template web-1080p
+   ```
+   This writes `appdata/recyclarr/configs/hd-bluray-web.yml` (Radarr) and
+   `appdata/recyclarr/configs/web-1080p.yml` (Sonarr) — real trash_ids pulled
+   live from TRaSH's repo, not hand-typed.
+2. Edit each generated file's `base_url`/`api_key` to point at the container
+   (e.g. `http://radarr:7878`) and the app's API key (from its `config.xml`).
+3. Run the sync:
+   ```
+   docker compose run --rm recyclarr sync
+   ```
+   This creates the custom formats and a quality profile
+   (**"HD Bluray + WEB"** for Radarr, **"WEB-1080p"** for Sonarr) in each app.
+4. In each app's UI, confirm the new profile exists under **Settings → Profiles**,
+   and select it as the default (**Settings → Media Management**) or per-item
+   when adding a movie/show.
+
+Re-run `docker compose run --rm recyclarr sync` any time to pick up upstream
+TRaSH Guide changes.
 
 ### 7. Configure Jellyfin
 
-- Add library pointing at `/data/media`
-
-*(next step — not yet documented)*
+1. Open http://localhost:8096 → first-run wizard: pick a language, create your
+   admin account.
+2. **Add Media Library**:
+   - **Content type:** Movies → folder `/data/media/movies`
+   - **Content type:** TV Shows → folder `/data/media/tv`
+3. Finish the wizard (remote access can stay off — only used via `localhost` here).
+4. New media appears automatically as Radarr/Sonarr import it, or trigger
+   **Dashboard → Libraries → Scan All Libraries** manually.
 
 ## How it works (technical)
 
