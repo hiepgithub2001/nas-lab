@@ -78,10 +78,40 @@ This brings up:
 2. (Optional) **Settings → General** → set up authentication.
 3. **Indexers → Add Indexer** → add your trackers (public, e.g. 1337x/YTS, or private
    tracker accounts). Test + Save each one.
+4. Some indexers (e.g. 1337x) sit behind Cloudflare's bot protection and reset the
+   connection for non-browser clients. This stack already runs **FlareSolverr**
+   (a headless-browser proxy) to solve that — see Troubleshooting below for how to
+   wire it up per-indexer.
 
 ### 5. Connect Prowlarr → Radarr/Sonarr
 
-*(next step — not yet documented)*
+Prowlarr needs to push its indexers into Radarr/Sonarr. This is app-to-app
+communication over the Docker network, not through your browser — so it uses
+container names (`radarr`, `sonarr`, `prowlarr`), not `localhost`.
+
+Get each app's API key (find it in the container's `config.xml`, or in its
+web UI under **Settings → General → Security**):
+
+```
+grep -o '<ApiKey>[^<]*</ApiKey>' appdata/radarr/config.xml
+grep -o '<ApiKey>[^<]*</ApiKey>' appdata/sonarr/config.xml
+```
+
+In Prowlarr:
+
+1. **Settings → Apps → + Add Application → Radarr**
+   - **Prowlarr Server:** `http://prowlarr:9696`
+   - **Radarr Server:** `http://radarr:7878`
+   - **API Key:** (from Radarr's config.xml)
+   - **Test**, then **Save**.
+2. **+ Add Application → Sonarr**
+   - **Prowlarr Server:** `http://prowlarr:9696`
+   - **Sonarr Server:** `http://sonarr:8989`
+   - **API Key:** (from Sonarr's config.xml)
+   - **Test**, then **Save**.
+
+Once saved, Prowlarr automatically syncs its indexers into both apps — no need to
+add indexers separately in Radarr/Sonarr.
 
 ### 6. Configure Radarr/Sonarr
 
@@ -96,6 +126,68 @@ This brings up:
 - Add library pointing at `/data/media`
 
 *(next step — not yet documented)*
+
+## How it works (technical)
+
+### Container-to-container networking
+
+`docker compose` puts all services on one private network and gives each
+container a hostname equal to its service name. So from *inside* a container,
+`radarr` resolves to the Radarr container the same way `google.com` resolves to
+Google — but `localhost` only ever means "myself." That's why app-to-app config
+(Prowlarr → Radarr/Sonarr, indexer → FlareSolverr) uses names like
+`http://radarr:7878`, while *you* (outside Docker, in a browser) use
+`http://localhost:7878`.
+
+### Why one shared `/data` folder
+
+Radarr/Sonarr/qBittorrent all mount the exact same host path (`DATA_ROOT`) at
+`/data`. When qBittorrent finishes a download in `/data/torrents/...`, Radarr/Sonarr
+can **hardlink** it into `/data/media/...` — this creates a second filename pointing
+at the same bytes on disk, instantly, with zero extra disk space used. Hardlinks only
+work when both paths are on the *same filesystem*, which is why everything shares one
+root instead of separate volumes per app.
+
+### API keys
+
+Each app (Radarr, Sonarr, Prowlarr, qBittorrent) protects its API with a key/password
+so only authorized apps (or you) can control it. When Prowlarr "connects" to Radarr,
+it's really just calling Radarr's HTTP API using that key, the same way a script would.
+
+### PUID / PGID / TZ
+
+linuxserver.io images (used for all 5 services) run their internal process as a
+specific Linux user/group, controlled by `PUID`/`PGID`. Matching these to your host
+user (`id -u` / `id -g`) means files these containers create in `/data` are owned by
+you, not root — so you can browse/delete them normally outside Docker. `TZ` just
+keeps logs and scheduling (e.g. Radarr's RSS sync) in your local time instead of UTC.
+
+### FlareSolverr
+
+Some indexer sites (e.g. 1337x) use Cloudflare's bot-detection, which resets
+connections from plain HTTP clients (like Prowlarr's) based on TLS fingerprint —
+this looks like a network error but isn't. FlareSolverr runs a real headless browser
+that passes Cloudflare's challenge and hands the resulting page back to Prowlarr.
+Add it once under **Settings → Indexer Proxies** (host `http://flaresolverr:8191`),
+then assign it to any indexer that fails with a Cloudflare-shaped error.
+
+## Troubleshooting
+
+- **"Unable to connect to indexer... DNS/SSL issues... IPv6"** — the container tried
+  the indexer's IPv6 address, which has no real route in this environment (WSL2
+  bridge network), and gave up before falling back to IPv4. Fixed by disabling IPv6
+  at the container level (`sysctls: net.ipv6.conf.all.disable_ipv6=1` in
+  `docker-compose.yml` for prowlarr/radarr/sonarr/flaresolverr) so the app only ever
+  attempts IPv4.
+- **"blocked by CloudFlare Protection"** or a TLS **"Connection reset by peer"** on a
+  specific indexer (e.g. 1337x, EZTV) — that site's Cloudflare bot-detection is
+  rejecting the plain HTTP client. Fix: add the indexer as a proxy target for
+  **FlareSolverr** (see above), not an IPv6/DNS issue even though the two can look
+  similar in the error text.
+- **API key was not accepted** (private trackers) — the tracker's own account API
+  key/passkey, not anything in this stack. Log into the tracker site directly, find
+  your API key under your profile/security settings, and re-paste it into Prowlarr's
+  indexer config.
 
 ## Notes
 
