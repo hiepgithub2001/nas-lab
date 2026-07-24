@@ -147,38 +147,15 @@ subnet. So when Tailscale creates its interface on Windows, the WSL-bound contai
 ports are already reachable on it. That is why installing Tailscale on Windows
 required zero changes on the Linux side.
 
-## Which machine runs Tailscale
+## Setup
 
-This is the one real decision, and it matters because of how this particular
-environment is set up.
+Tailscale runs on the **Windows host**, not inside WSL or as a container. That is the
+right place here: it starts as a Windows service independently of WSL, so remote
+access does not depend on the Docker stack being up, and thanks to mirrored
+networking it reaches the containers with no extra plumbing.
 
-Jellyfin runs in Docker inside WSL2, and this WSL instance uses
-**`networkingMode=mirrored`** (confirmed in `/etc/wsl.conf`). In mirrored mode WSL
-shares the Windows host's network interfaces rather than sitting behind a private
-NAT — the machine's LAN address serves Jellyfin directly, with no `netsh portproxy`
-forwarding needed.
-
-That makes **installing Tailscale on Windows** the recommended route:
-
-| | Tailscale on Windows *(recommended)* | Tailscale in a Docker container |
-|---|---|---|
-| Setup | Installer + browser login | Compose service + auth key |
-| Runs when WSL is stopped | Yes | No |
-| Survives WSL/Docker restarts | Yes | Needs the stack up |
-| Secrets in the repo | None | An auth key to keep out of git |
-| Tailnet identity | The whole machine | Jellyfin alone |
-
-Windows wins on being always-on: a media server you have to remember to start is a
-media server that is down whenever you actually want it. Take the Docker route only
-if you specifically want Jellyfin to be its own tailnet node, or you plan to move this
-stack to a Linux host later.
-
----
-
-## Option A — Tailscale on Windows (recommended)
-
-> **This is what is set up on this machine.** Installed via
-> `winget install --id Tailscale.Tailscale`. Verified working:
+> **Already done on this machine**, installed with
+> `winget install --id Tailscale.Tailscale`:
 >
 > | | |
 > |---|---|
@@ -187,126 +164,62 @@ stack to a Linux host later.
 > | MagicDNS | `admin-pc.tail9dbb76.ts.net` |
 > | Jellyfin | `http://admin-pc.tail9dbb76.ts.net:8096` |
 >
-> All six web UIs answer on the tailnet address with no compose changes, no port
-> forwarding, and no reverse proxy — confirming the mirrored-networking assumption.
+> Verified: all six web UIs answer on the tailnet address with no compose changes, no
+> port forwarding and no reverse proxy. MagicDNS is enabled.
 
 ### 1. Install and sign in on the server
 
-1. Download the Windows client: https://tailscale.com/download/windows
-2. Run the installer, then sign in (Google/Microsoft/GitHub account, or email).
-   The account you choose *is* your tailnet — use the same one on every device.
-3. Once connected, find this machine's tailnet address from the tray icon, or:
-   ```
-   tailscale ip -4
-   ```
-   It will look like `100.x.y.z`.
+```powershell
+winget install --id Tailscale.Tailscale --accept-package-agreements
+```
 
-Because WSL is in mirrored networking mode, Jellyfin — already listening on
-`0.0.0.0:8096` — is reachable at that address with no further configuration.
+Then authenticate — this prints a URL to open in a browser:
 
-### 2. Enable MagicDNS (worth doing)
+```powershell
+& "C:\Program Files\Tailscale\tailscale.exe" up --unattended
+```
 
-In the [Tailscale admin console](https://login.tailscale.com/admin/dns), turn on
-**MagicDNS**. Your machines then get names instead of numbers, so you can use
-`http://<machine-name>:8096` and never care about the IP again.
+The account you sign in with **is** your tailnet; use the same one on every device.
+`--unattended` keeps the machine connected without a logged-in user.
 
-### 3. Add your other devices
+Confirm, and note the address:
 
-Install Tailscale on each device you want to watch from and sign in with **the same
-account**:
+```powershell
+& "C:\Program Files\Tailscale\tailscale.exe" status
+```
 
-- Android — Play Store
-- iPhone / iPad / Apple TV — App Store
+### 2. Add the devices you want to watch on
+
+Install Tailscale and sign in with **the same account**:
+
+- Android — Play Store · iPhone / iPad / Apple TV — App Store
 - Windows / macOS / Linux — https://tailscale.com/download
 
-### 4. Point Jellyfin clients at the server
+A different account creates a separate tailnet and nothing will connect. This is the
+most common mistake.
 
-In the Jellyfin app on a remote device, add the server as:
+### 3. Point Jellyfin clients at the server
 
 ```
-http://<machine-name>:8096      (with MagicDNS)
-http://100.x.y.z:8096           (without)
+http://admin-pc.tail9dbb76.ts.net:8096
+http://100.126.149.22:8096              (if the name will not resolve)
 ```
 
 Do **not** use `localhost` — on a phone that means the phone itself. Do not use
 `192.168.x.x` either; that only works on your home network.
 
-### 5. Verify it actually works remotely
+### 4. Verify it actually works remotely
 
-Test from genuinely outside your network — turn Wi-Fi off on your phone and use mobile
-data, with Tailscale connected. Testing while still on your home Wi-Fi proves nothing:
-it may be succeeding over the LAN rather than the tailnet.
-
-```
-tailscale status      # are both devices online and connected?
-tailscale ping <machine-name>
-```
-
----
-
-## Option B — Tailscale as a Docker container
-
-Use this if you want Jellyfin to appear on the tailnet as its own node, independent of
-the Windows host.
-
-### 1. Create an auth key
-
-In the admin console → **Settings → Keys → Generate auth key**. Enable **Reusable**
-and **Ephemeral: off**. Copy it — it is shown once.
-
-### 2. Add it to `.env` (already gitignored)
+Turn Wi-Fi **off** on the phone and use mobile data, with Tailscale connected.
+Testing on home Wi-Fi proves nothing — it may be succeeding over the LAN.
 
 ```
-TS_AUTHKEY=tskey-auth-xxxxxxxxxxxx
+tailscale status                # both devices listed and online?
+tailscale ping admin-pc
 ```
 
-Never commit this. It can add machines to your tailnet.
+`ping` reporting `direct` means peer-to-peer; `relay` still works, with more latency.
 
-### 3. Add the service to `docker-compose.yml`
-
-```yaml
-  tailscale:
-    image: tailscale/tailscale:latest
-    container_name: tailscale
-    hostname: jellyfin          # becomes the MagicDNS name
-    restart: unless-stopped
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - ${CONFIG_ROOT}/tailscale:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    ports:
-      - 8096:8096               # moved here from the jellyfin service
-```
-
-Then make Jellyfin share that container's network stack — remove its own `ports:`
-block and add:
-
-```yaml
-    network_mode: service:tailscale
-```
-
-`/dev/net/tun` is present in this WSL kernel (verified), so `TS_USERSPACE=false` works
-and you get proper kernel networking rather than the slower userspace fallback.
-
-### 4. Bring it up
-
-```
-docker compose up -d tailscale jellyfin
-docker compose exec tailscale tailscale status
-```
-
-Trade-off to be aware of: with `network_mode: service:tailscale`, Jellyfin no longer
-has its own network identity, so if the tailscale container is down Jellyfin is
-unreachable even locally.
-
----
 
 ## After a reboot
 
@@ -401,23 +314,21 @@ Check your actual upload speed before blaming the setup:
 speedtest-cli --simple      # or use fast.com from the server's browser
 ```
 
-## Reaching the other apps remotely
+## Security consequence: every app is now reachable
 
-Everything else in the stack is on the same machine, so once Tailscale is up they all
-follow — no extra setup:
+Tailscale attaches to the machine, so **all six web UIs became remotely reachable at
+once** — not just Jellyfin. Per-app URLs are in the
+[user guide](USER-GUIDE.md#everything-else-is-reachable-too).
 
-| App | Remote URL |
-|---|---|
-| Jellyfin | `http://<machine-name>:8096` |
-| Radarr | `http://<machine-name>:7878` |
-| Sonarr | `http://<machine-name>:8989` |
-| Prowlarr | `http://<machine-name>:9696` |
-| qBittorrent | `http://<machine-name>:8080` |
+That is useful (queue a film from your phone while out, have it waiting when you get
+home) but it changes the threat model. Radarr, Sonarr and qBittorrent can write to
+your filesystem, their API keys bypass the login entirely, and at time of writing they
+share one weak password while Bazarr has no authentication at all.
 
-This is genuinely useful — you can queue a film from your phone while out and have it
-waiting when you get home. It is also exactly why the weak shared password matters:
-these apps can write to your filesystem, and their API keys bypass the login entirely.
-Strengthen the passwords.
+The tailnet is private to your devices, so this is not an open door — but any device
+that joins, or is lent out, stolen, or compromised, gets full control of the stack.
+Strengthen the credentials in `CREDENTIALS.md` and set a Bazarr password
+(**Settings → General → Security**).
 
 ## What not to do
 
@@ -430,19 +341,21 @@ Strengthen the passwords.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| Can't reach `100.x.y.z:8096` | Tailscale disconnected on one end. `tailscale status` on both. |
-| Works at home, fails away | You were testing over LAN. Re-test on mobile data with Wi-Fi off. |
-| MagicDNS name won't resolve | MagicDNS not enabled, or device needs reconnect. Try the raw `100.x` IP. |
-| Connects, playback stalls | Upload bandwidth or CPU transcode limit — cap the client bitrate. |
-| Jellyfin says "not allowed" | Check **Dashboard → Networking**: remote access must stay enabled and the IP filter empty (currently `EnableRemoteAccess=True`, filter empty). |
+Everyday symptoms and fixes are in the
+[user guide](USER-GUIDE.md#if-it-does-not-connect). Deeper diagnosis:
 
 ```
-tailscale status            # peer list and connection type
-tailscale netcheck          # NAT / relay diagnosis
+tailscale status            # peer list, and direct vs relay per peer
+tailscale netcheck          # NAT type, DERP latency, hole-punching ability
+tailscale ping <machine>    # shows the path actually used
 docker compose logs -f jellyfin
 ```
 
-A connection showing as `relay` rather than `direct` still works, just with more
-latency — Tailscale is routing via a DERP relay because neither end could hole-punch.
+- **`relay` instead of `direct`** — still works, just higher latency. Neither end
+  could hole-punch through its NAT, so traffic goes via an encrypted DERP relay.
+  `netcheck` will usually show a hard/symmetric NAT on one side.
+- **Jellyfin refuses the connection** — check **Dashboard → Networking**: remote
+  access must stay enabled with an empty IP filter (currently `EnableRemoteAccess=True`
+  and no filter, which is correct).
+- **Peer online but ports time out** — WSL is not running; see
+  [after a reboot](#after-a-reboot).
