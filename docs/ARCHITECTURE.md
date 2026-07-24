@@ -22,12 +22,12 @@ flowchart TB
     You(["You (browser)"])
 
     subgraph Docker["Docker bridge network (self-host-film)"]
-        Prowlarr["Prowlarr\n:9696"]
-        Radarr["Radarr\n:7878"]
-        Sonarr["Sonarr\n:8989"]
-        qBit["qBittorrent\n:8080"]
-        Flare["FlareSolverr\n:8191"]
-        Jellyfin["Jellyfin\n:8096"]
+        Prowlarr["Prowlarr<br/>:9696"]
+        Radarr["Radarr<br/>:7878"]
+        Sonarr["Sonarr<br/>:8989"]
+        qBit["qBittorrent<br/>:8080"]
+        Flare["FlareSolverr<br/>:8191"]
+        Jellyfin["Jellyfin<br/>:8096"]
     end
 
     subgraph Storage["/data (shared host path, DATA_ROOT)"]
@@ -35,13 +35,13 @@ flowchart TB
         Torrents["torrents/movies, torrents/tv"]
     end
 
-    Internet(["Indexer sites\n(1337x, YTS, private trackers, ...)"])
+    Internet(["Indexer sites<br/>(1337x, YTS, private trackers, ...)"])
 
-    You -- "localhost:9696..8096" --> Prowlarr
-    You --> Radarr
-    You --> Sonarr
-    You --> qBit
-    You --> Jellyfin
+    You -- "localhost:9696" --> Prowlarr
+    You -- "localhost:7878" --> Radarr
+    You -- "localhost:8989" --> Sonarr
+    You -- "localhost:8080" --> qBit
+    You -- "localhost:8096" --> Jellyfin
 
     Prowlarr -- "API key" --> Radarr
     Prowlarr -- "API key" --> Sonarr
