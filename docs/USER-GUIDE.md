@@ -113,14 +113,85 @@ To intervene on a single film — open it in Bazarr and either:
 Theatrical cut will drift on an Extended cut. Fix by picking a subtitle whose release
 name matches your file, or nudge it in Jellyfin's player (subtitle offset).
 
+### Two kinds of subtitle
+
+Worth knowing before troubleshooting, because they behave differently:
+
+- **Embedded** — already inside the `.mkv`, put there by whoever made the release.
+  Most Bluray/WEB-DL releases carry English. Nothing to download; they show up the
+  moment Jellyfin scans the file.
+- **External** — separate `.srt` files that Bazarr fetches and writes next to the
+  video. This is how you get languages the release didn't ship with, e.g. Vietnamese.
+
+So a film can already have working English subtitles while Bazarr still reports
+Vietnamese as missing. Check what a file actually contains:
+
+```
+find /mnt/f/film-data/media -name '*.srt'      # external, from Bazarr
+```
+
+Anything not listed there but offered in the player is embedded.
+
 ### Watching with subtitles in Jellyfin
 
-During playback, click the **speech-bubble icon** → choose your subtitle track. Set a
-default so you don't repeat it every time: **Profile → Settings → Subtitles →
-preferred language + "Always play subtitles"** if you want them on by default.
+During playback, click the **speech-bubble icon** → choose a subtitle track.
 
-If a subtitle exists on disk but Jellyfin doesn't list it, refresh that item's
-metadata (**⋯ → Refresh metadata**) so Jellyfin rescans for sidecar files.
+**If no subtitles appear automatically, this is almost always why:** a new Jellyfin
+account ships with **Subtitle mode = `Default`** and **no language preference**.
+`Default` means *only* auto-enable a track the file itself flags as default — and many
+releases flag none, so Jellyfin correctly enables nothing even though several tracks
+exist.
+
+Fix it once, per user account: **profile icon → Settings → Playback / Subtitles**
+
+| Setting | Set to |
+|---|---|
+| Subtitle language preference | your language (e.g. English, Vietnamese) |
+| Subtitle mode | **`Always Play`** |
+
+`Always Play` enables a matching subtitle whenever one exists, regardless of the
+default flag. That is what you want here.
+
+### Subtitle formats and why one may cost you a transcode
+
+| Format | What it is | Cost |
+|---|---|---|
+| `subrip` / SRT / ASS | Text | Overlaid by the client, free |
+| `PGSSUB` / VOBSUB | **Images** (from Bluray/DVD) | Must be burned into the video → forces a **CPU transcode** |
+
+If playback is smooth until you switch subtitles on and then stutters, this is the
+cause — an image-based track is now forcing a transcode, and there is no GPU passed
+into the Jellyfin container. Prefer a text track, or let Bazarr supply an external
+`.srt`.
+
+Inspect what a film has:
+
+```
+docker exec jellyfin curl -s \
+  "http://localhost:8096/Items/<item-id>/PlaybackInfo?UserId=<user-id>" \
+  -H "Authorization: MediaBrowser Token=<token>"
+```
+
+### When subtitles are missing entirely
+
+1. **Check Bazarr first** — open the film there. If it lists the language under
+   *missing*, the problem is upstream of Jellyfin.
+2. **Check for a throttled provider** — a failed login gets a provider disabled for
+   hours, and it is only visible in the log:
+   ```
+   docker compose logs bazarr | grep -i throttl
+   # Throttling opensubtitlescom for 12 hours ... because of: AuthenticationError
+   ```
+   Fix the credentials, then `docker compose restart bazarr` — the restart also clears
+   the throttle. Note OpenSubtitles rejects API logins for accounts that have never
+   signed in on the website.
+3. **Force a search** — in Bazarr, open the film and click the magnifying glass rather
+   than waiting for the schedule.
+4. **Nothing found at all** — Vietnamese coverage is much thinner than English. For
+   obscure titles you may need to supply your own `.srt` via Bazarr's **Upload**.
+
+If a `.srt` exists on disk but Jellyfin doesn't offer it, refresh that item's metadata
+(**⋯ → Refresh metadata**) so Jellyfin rescans for sidecar files.
 
 ## Following a download
 
