@@ -3,6 +3,9 @@
 Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 [TRaSH Guides](https://trash-guides.info/).
 
+**Docs:** [User Guide](docs/USER-GUIDE.md) — adding films/shows and watching them ·
+[Architecture](docs/ARCHITECTURE.md) — how it works internally
+
 ## How it fits together
 
 1. **Prowlarr** searches indexers/trackers for releases and knows where to find them.
