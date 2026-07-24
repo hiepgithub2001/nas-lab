@@ -129,6 +129,9 @@ add indexers separately in Radarr/Sonarr.
 
 ## How it works (technical)
 
+> See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deeper dive with a
+> request-lifecycle diagram.
+
 ### Container-to-container networking
 
 `docker compose` puts all services on one private network and gives each
