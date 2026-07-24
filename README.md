@@ -275,8 +275,17 @@ shared mount *is* the integration.
    - **Content type:** TV Shows → folder `/data/media/tv`
 3. Finish the wizard (remote access can stay off — only used via `localhost` here).
 4. New media appears automatically as Radarr/Sonarr import it, or trigger
-   **Dashboard → Libraries → Scan All Libraries** manually. Subtitles fetched by
-   Bazarr show up as selectable tracks during playback.
+   **Dashboard → Libraries → Scan All Libraries** manually.
+5. Turn subtitles on by default — **profile icon → Settings → Playback**
+   (or **Subtitles**):
+   - **Subtitle language preference:** `English`, or `Vietnamese` once Bazarr is
+     fetching those
+   - **Subtitle mode:** change `Default` → **`Always Play`**
+
+   Worth doing immediately. Jellyfin's stock `Default` mode only auto-enables a track
+   that the file flags as default, and many releases flag none — so films play with no
+   subtitles even when several tracks exist. See
+   [watching with subtitles](docs/USER-GUIDE.md#watching-with-subtitles-in-jellyfin).
 
 ## How it works (technical)
 
@@ -336,18 +345,6 @@ request-lifecycle diagrams.
   docker exec qbittorrent curl -s -b /tmp/qb.cookie \
     http://localhost:8080/api/v2/torrents/info
   ```
-- **No subtitles appear in Jellyfin even though the film has them** — Jellyfin
-  accounts default to **Subtitle mode `Default`**, which only auto-enables a track the
-  file flags as default; many releases flag none. Set **Subtitle mode → `Always Play`**
-  and a language preference under **profile → Settings → Playback**. See
-  [the user guide](docs/USER-GUIDE.md#watching-with-subtitles-in-jellyfin).
-- **Bazarr finds no subtitles for a language** — check for a throttled provider:
-  ```
-  docker compose logs bazarr | grep -i throttl
-  ```
-  A failed provider login disables it for hours (`AuthenticationError`). OpenSubtitles
-  also rejects API logins from accounts that have never signed in on its website. Fix
-  the credentials, then `docker compose restart bazarr` to clear the throttle.
 - **Downloads are slow rather than stuck** — this is release availability, not client
   config. Speed is capped by how many seeders the chosen release has. Add more
   indexers so Radarr/Sonarr have a deeper pool to pick from; private trackers help
