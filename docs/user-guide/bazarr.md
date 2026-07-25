@@ -72,8 +72,13 @@ layouts:
 
 | `--layout` | Output | On screen |
 |---|---|---|
-| `topbottom` | `.ass` | primary bottom (white), secondary top (yellow) |
+| `topbottom` | `.ass` | primary (English) bottom in **yellow**, secondary top in **white** |
 | `stacked` | `.srt` | both stacked at the bottom |
+
+Colours/positions are baked into the `.ass` (Jellyfin's subtitle-appearance settings
+won't override them). To change them, edit the two `Style:` lines in
+`scripts/merge-subs.py` — the 4th field is the colour in ASS `&HAABBGGRR` form
+(`&H0000FFFF` = yellow, `&H00FFFFFF` = white).
 
 **Wire it in** — **Settings → Subtitles → Post-Processing**, enable **Custom
 Post-Processing**, command:

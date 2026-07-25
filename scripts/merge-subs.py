@@ -145,8 +145,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Bottom,Arial,54,&H00FFFFFF,&H00000000,&H00000000,0,0,1,2,1,2,60,60,40,1
-Style: Top,Arial,48,&H0000FFFF,&H00000000,&H00000000,0,0,1,2,1,8,60,60,40,1
+Style: Bottom,Arial,54,&H0000FFFF,&H00000000,&H00000000,0,0,1,2,1,2,60,60,40,1
+Style: Top,Arial,48,&H00FFFFFF,&H00000000,&H00000000,0,0,1,2,1,8,60,60,40,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -154,8 +154,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def write_ass(path, bottom_cues, top_cues):
-    """Bottom language keeps its own timing at the bottom; top language at the
-    top in yellow. Each is an independent event stream — no timeline merge."""
+    """Primary (English) sits at the bottom in yellow; secondary at the top in
+    white. Each keeps its own timing — independent event streams, no merge."""
 
     def line(start, end, style, text):
         text = text.replace("\n", "\\N").replace("{", "(").replace("}", ")")
