@@ -154,7 +154,7 @@ Movies and Series** (skip this and Bazarr silently ignores everything). Add prov
 Connect Radarr/Sonarr with container names + API keys, then **restart Bazarr** —
 connection settings are only read at startup.
 For dual-language subtitles, deploy the merge script and set the post-processing
-hook — see the [user guide](USER-GUIDE.md#dual-language-subtitles-post-processing):
+hook — see the [Bazarr guide](user-guide/bazarr.md#dual-language-subtitles-post-processing):
 ```
 mkdir -p appdata/bazarr/scripts && cp scripts/merge-subs.py appdata/bazarr/scripts/
 ```
@@ -200,4 +200,4 @@ internet: [REMOTE-ACCESS.md](REMOTE-ACCESS.md).
 | No subtitles despite tracks existing | Jellyfin **Subtitle mode** is `Default` — set `Always Play` |
 
 Fuller explanations: [README troubleshooting](../README.md#troubleshooting) ·
-[user guide](USER-GUIDE.md) · [architecture](ARCHITECTURE.md)
+[user guide](user-guide/) · [architecture](ARCHITECTURE.md)

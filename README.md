@@ -11,7 +11,7 @@ there. The rest of this README is the detailed reference behind those steps.
 | Doc | For |
 |---|---|
 | [Quickstart](docs/QUICKSTART.md) | Get it running: after a reboot, or from scratch |
-| [User Guide](docs/USER-GUIDE.md) | Daily use — adding films, watching, subtitles, remote |
+| [User Guide](docs/user-guide/) | Daily use — one page per service (Radarr, Sonarr, qBittorrent, Prowlarr, Bazarr, Jellyfin) |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
 | [Architecture](docs/ARCHITECTURE.md) | How the parts fit together internally |
 | `docs/CREDENTIALS.md` | Logins and API keys |
@@ -280,7 +280,7 @@ shared mount *is* the integration.
    Worth doing immediately. Jellyfin's stock `Default` mode only auto-enables a track
    that the file flags as default, and many releases flag none — so films play with no
    subtitles even when several tracks exist. See
-   [watching with subtitles](docs/USER-GUIDE.md#watching-with-subtitles-in-jellyfin).
+   [watching with subtitles](docs/user-guide/jellyfin.md#subtitles).
 
 ### 7. Tell Radarr/Sonarr to notify Jellyfin
 

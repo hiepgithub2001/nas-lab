@@ -4,7 +4,7 @@ By default this stack is reachable only on your own network. This guide adds rem
 access using [Tailscale](https://tailscale.com/), so you can watch from anywhere
 without exposing anything to the public internet.
 
-For local usage see the [User Guide](USER-GUIDE.md).
+For local usage see the [User Guide](user-guide/).
 
 ## Why Tailscale rather than port forwarding
 
@@ -320,8 +320,13 @@ speedtest-cli --simple      # or use fast.com from the server's browser
 ## Security consequence: every app is now reachable
 
 Tailscale attaches to the machine, so **all six web UIs became remotely reachable at
-once** — not just Jellyfin. Per-app URLs are in the
-[user guide](USER-GUIDE.md#everything-else-is-reachable-too).
+once** — not just Jellyfin. Same tailnet address, different port:
+
+| App | Remote URL |
+|---|---|
+| Jellyfin | `http://admin-pc-1.tail9dbb76.ts.net:8096` |
+| Radarr | `…:7878` · Sonarr `…:8989` · Prowlarr `…:9696` |
+| Bazarr | `…:6767` · qBittorrent `…:8080` |
 
 That is useful (queue a film from your phone while out, have it waiting when you get
 home) but it changes the threat model. Radarr, Sonarr and qBittorrent can write to
@@ -344,8 +349,15 @@ Strengthen the credentials in `CREDENTIALS.md` and set a Bazarr password
 
 ## Troubleshooting
 
-Everyday symptoms and fixes are in the
-[user guide](USER-GUIDE.md#if-it-does-not-connect). Deeper diagnosis:
+| Symptom | Fix |
+|---|---|
+| Can't reach the server at all | Tailscale off on one end — check both show connected |
+| Works at home, fails outside | You tested over LAN; retry on mobile data with Wi-Fi off |
+| Name won't resolve | Use the raw `100.69.57.57` address; reconnect Tailscale |
+| Peer shows **offline** | The PC is off, or WSL isn't running — see [after a reboot](#after-a-reboot) |
+| Connects but playback stalls | Upload bandwidth or CPU transcode — lower the client bitrate |
+
+Deeper diagnosis:
 
 ```
 tailscale status            # peer list, and direct vs relay per peer
