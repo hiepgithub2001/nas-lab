@@ -55,6 +55,18 @@ schtasks /create /tn "Start WSL" /tr "wsl.exe -d Ubuntu -u root /bin/true" /sc o
 WSL then boots at logon and the stack comes up with it. Note this fires at **logon**,
 not power-on, so someone still has to sign into Windows.
 
+### Claude Code skill
+
+There's a Claude Code skill that starts the stack and health-checks every layer
+(containers, Tailscale, GPU, web UIs) in one go: **`start-media-stack`**. Invoke it in
+a Claude session — `/start-media-stack`, or just ask to "start the media server". The
+definition lives in this repo at `.claude/skills/start-media-stack/SKILL.md`; on a
+fresh machine, copy it to `~/.claude/skills/` to make it invocable:
+
+```bash
+mkdir -p ~/.claude/skills && cp -r .claude/skills/start-media-stack ~/.claude/skills/
+```
+
 ### Where to go
 
 | | |
