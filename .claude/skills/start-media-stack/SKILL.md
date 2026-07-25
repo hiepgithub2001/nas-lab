@@ -62,17 +62,47 @@ Confirm **prowlarr, flaresolverr, radarr, sonarr, bazarr, qbittorrent, jellyfin*
 show `Up`. (recyclarr absent/exited is normal.) If any is missing or restarting, check
 its logs: `docker compose logs --tail 40 <name>`.
 
-## Step 3 — verify Tailscale (remote access)
+## Step 3 — verify Tailscale, and recover the node if it's down
+
+Expected identity: `admin-pc-1` / `admin-pc-1.tail9dbb76.ts.net` / `100.69.57.57`.
+`tailscaled` is systemd-managed and the node key persists, so no browser login is
+needed — a down node just needs the daemon started and/or `tailscale up`.
+
+`tailscale status` reads without sudo (use it to detect), but **starting the daemon and
+`tailscale up` need sudo**. Try them non-interactively (`sudo -n`); if sudo needs a
+password, print the exact command for the user to run rather than hanging.
 
 ```bash
+# 1. Daemon up?
+if ! systemctl is-active --quiet tailscaled; then
+  echo "tailscaled is down — starting it"
+  sudo -n systemctl start tailscaled 2>/dev/null \
+    || echo "  ACTION NEEDED (run yourself): sudo systemctl start tailscaled"
+  sleep 3
+fi
+
+# 2. Node connected? (Logged out / stopped -> bring it up)
+if tailscale status 2>&1 | grep -qiE 'logged out|stopped|Tailscale is stopped'; then
+  echo "node is offline — bringing it up"
+  sudo -n tailscale up 2>/dev/null \
+    || echo "  ACTION NEEDED (run yourself): sudo tailscale up"
+  sleep 3
+fi
+
+# 3. Report
 tailscale status
 tailscale ip -4
 ```
 
-This node should be online. Expected identity: `admin-pc-1` /
-`admin-pc-1.tail9dbb76.ts.net` / `100.69.57.57`. `tailscaled` is systemd-managed and
-needs no login (the node key persists). If it is not running:
-`sudo systemctl start tailscaled` (needs the user's password).
+Interpreting `tailscale status`:
+- normal peer list = online, done.
+- **"Logged out." / "Tailscale is stopped."** = daemon is up but the node isn't
+  connected → `sudo tailscale up` (reconnects instantly, no browser, key persists).
+- command errors / no daemon = `tailscaled` isn't running → `sudo systemctl start tailscaled`.
+
+If `tailscale up` ever asks for a login URL (only if the node key expired — rare), tell
+the user to open the printed `https://login.tailscale.com/...` link and sign in with
+the **same account** (`hiep622032001@…`).
 
 ## Step 4 — verify GPU transcoding (Jellyfin + RTX 4080 Super)
 
