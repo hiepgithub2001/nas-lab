@@ -1,3 +1,4 @@
 appdata/
 .env
 # CREDENTIALS.md
+__pycache__/
