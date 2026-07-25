@@ -38,17 +38,17 @@ If neither works, the docker daemon is likely down — try `sudo systemctl start
 
 ## Step 1 — bring the stack up
 
-Start only the 7 long-running services — **not** recyclarr (starting recyclarr here
-would trigger an unnecessary quality-profile sync every boot; it's meant to run on
-demand via `docker compose run --rm recyclarr sync`):
-
 ```bash
 cd ~/self-host-film
-docker compose up -d prowlarr flaresolverr radarr sonarr bazarr qbittorrent jellyfin
-# or: sg docker -c "docker compose up -d prowlarr flaresolverr radarr sonarr bazarr qbittorrent jellyfin"
+docker compose up -d          # or: sg docker -c "docker compose up -d"
 ```
 
-This is idempotent — already-running containers are left alone, missing ones start.
+Idempotent — already-running containers are left alone, missing ones start, and any
+service added to the compose file later is picked up automatically.
+
+This also starts **recyclarr**, which runs a one-off quality-profile sync and exits.
+That's harmless (idempotent) — so recyclarr showing as *exited* afterwards in Step 2 is
+expected, not a failure.
 
 ## Step 2 — verify the 7 long-running containers are Up
 
