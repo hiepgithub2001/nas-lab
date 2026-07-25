@@ -13,8 +13,8 @@ there. The rest of this README is the detailed reference behind those steps.
 | [Quickstart](docs/QUICKSTART.md) | Get it running: after a reboot, or from scratch |
 | [User Guide](docs/user-guide/) | Daily use — one page per service (Radarr, Sonarr, qBittorrent, Prowlarr, Bazarr, Jellyfin) |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
-| [Transcoding](docs/TRANSCODING.md) | GPU transcode/encode/decode, Direct Play vs transcode |
-| [Architecture](docs/ARCHITECTURE.md) | How the parts fit together internally |
+| [Transcoding](docs/technical/TRANSCODING.md) | GPU transcode/encode/decode, Direct Play vs transcode |
+| [Architecture](docs/technical/ARCHITECTURE.md) | How the parts fit together internally |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
 ## How it fits together
@@ -310,26 +310,26 @@ find yourself scanning the library by hand again, check this connection first.
 ## How it works (technical)
 
 Four things explain most of the setup decisions above. Each is covered in depth in
-**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**, which also has component and
+**[docs/technical/ARCHITECTURE.md](docs/technical/ARCHITECTURE.md)**, which also has component and
 request-lifecycle diagrams.
 
 - **`localhost` vs container names** — containers reach each other by service name
   (`http://radarr:7878`); inside a container `localhost` means only itself. Your
   browser, being outside Docker, uses `http://localhost:7878`. This is the #1 source
   of "can't connect" mistakes when wiring the apps together.
-  → [Networking model](docs/ARCHITECTURE.md#networking-model)
+  → [Networking model](docs/technical/ARCHITECTURE.md#networking-model)
 - **One shared `/data` root** — lets Radarr/Sonarr *hardlink* finished downloads into
   the library instead of copying: instant, zero extra disk space, and qBittorrent
   keeps seeding the same bytes. Requires one filesystem, hence one root.
-  → [Storage model](docs/ARCHITECTURE.md#storage-model-why-hardlinks-instead-of-copies)
+  → [Storage model](docs/technical/ARCHITECTURE.md#storage-model-why-hardlinks-instead-of-copies)
 - **`PUID`/`PGID`/`TZ`** — make container-written files owned by your host user rather
   than root, and keep logs/scheduling on local time.
-  → [Identity and permissions](docs/ARCHITECTURE.md#identity-and-permissions-puid-pgid-tz)
+  → [Identity and permissions](docs/technical/ARCHITECTURE.md#identity-and-permissions-puid-pgid-tz)
 - **FlareSolverr** — a real headless browser that clears Cloudflare bot-checks for
   indexers whose TLS fingerprinting rejects plain HTTP clients. Register once under
   **Settings → Indexer Proxies** (`http://flaresolverr:8191`), then attach it to any
   indexer failing with a Cloudflare-shaped error.
-  → [Why FlareSolverr exists](docs/ARCHITECTURE.md#why-flaresolverr-exists)
+  → [Why FlareSolverr exists](docs/technical/ARCHITECTURE.md#why-flaresolverr-exists)
 
 ## Troubleshooting
 

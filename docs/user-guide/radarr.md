@@ -23,7 +23,7 @@ imports the finished file into `/data/media/movies`.
 
 The TRaSH-synced `HD Bluray + WEB` profile is what makes Radarr prefer good releases
 and reject bad ones (cams, disc dumps, wrong-audio dual groups). It's maintained by
-[Recyclarr](../ARCHITECTURE.md#components); re-sync to update:
+[Recyclarr](../technical/ARCHITECTURE.md#components); re-sync to update:
 
 ```
 docker compose run --rm recyclarr sync
@@ -58,7 +58,7 @@ Radarr does this **automatically** for downloads the client reports as *failed*
 (`autoRedownloadFailed`), which is why you sometimes see several grabs chain by
 themselves. It does **not** cover torrents merely *stalled* forever (0 seeds, `metaDL`)
 — those need the manual removal above. See
-[ARCHITECTURE → failure handling](../ARCHITECTURE.md#failure-handling-what-is-automatic-and-what-is-not).
+[ARCHITECTURE → failure handling](../technical/ARCHITECTURE.md#failure-handling-what-is-automatic-and-what-is-not).
 
 ## Import failed: "Could not find a part of the path"
 

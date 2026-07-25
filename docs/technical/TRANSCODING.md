@@ -3,7 +3,7 @@
 How Jellyfin gets a film from disk onto a screen, when it re-encodes vs streams
 untouched, and how the RTX 4080 Super fits in. For general architecture see
 [ARCHITECTURE](ARCHITECTURE.md); for day-to-day Jellyfin use see
-[jellyfin.md](user-guide/jellyfin.md).
+[jellyfin.md](../user-guide/jellyfin.md).
 
 ## The three ways a film reaches a client
 

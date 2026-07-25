@@ -26,9 +26,10 @@ guide: [REMOTE-ACCESS](../REMOTE-ACCESS.md). Short version: install Tailscale on
 device, sign in with the **same account** as the server, and point the Jellyfin app at
 the server's tailnet address (`http://<machine>.<tailnet>.ts.net:8096`).
 
-Remote playback is limited by your home **upload** bandwidth and by CPU transcoding
-(no GPU is passed in) — set a bitrate cap in the app for remote playback, and prefer
-1080p sources over 4K for anything you'll watch away from home.
+Remote playback of a 4K file transcodes down to fit your connection — handled on the
+GPU (see [Transcoding](../technical/TRANSCODING.md)), so it's smooth. The main limit is
+your home **upload** bandwidth; set the streaming quality in the app to match (20-40
+Mbps is plenty for 1080p to a phone).
 
 ## A film downloaded but isn't here
 
@@ -115,14 +116,14 @@ merges them into one track — see [bazarr.md → dual-language](bazarr.md#dual-
 Transcoding on this system runs on the **RTX 4080 Super via NVENC**, so it's fast — a
 4K HDR transcode that would peg a CPU runs at a fraction of load. Full detail (how the
 Direct Play vs transcode decision is made, encode/decode, verification) is in
-**[TRANSCODING.md](../TRANSCODING.md)**. The essentials:
+**[TRANSCODING.md](../technical/TRANSCODING.md)**. The essentials:
 
 - A file is **transcoded** only when the client can't play the original — wrong codec
   (4K HEVC/AV1 on a phone), too-high bitrate, unsupported container, or image-based
   **PGS** subtitles. Otherwise it's **Direct Play** (untouched, best quality).
 - If playback looks **soft**, it's almost always the **client app's quality setting**
   set too low, not the server — raise it in the app (tap player → quality → 20-40 Mbps
-  or Auto). See [TRANSCODING → the client bitrate trap](../TRANSCODING.md#quality-and-the-client-bitrate-trap).
+  or Auto). See [TRANSCODING → the client bitrate trap](../technical/TRANSCODING.md#quality-and-the-client-bitrate-trap).
 - Check what's happening live: **Dashboard → Activity** shows *Direct Play* vs
   *Transcode (hw)*. The `(hw)` confirms it's on the GPU.
 

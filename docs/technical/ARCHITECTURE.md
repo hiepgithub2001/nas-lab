@@ -1,7 +1,7 @@
 # Technical Architecture
 
 This document explains how the pieces of this stack connect and why, in more
-depth than the README's quick summary. See the [README](../README.md) for
+depth than the README's quick summary. See the [README](../../README.md) for
 setup steps.
 
 ## Components

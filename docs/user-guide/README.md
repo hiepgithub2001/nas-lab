@@ -2,7 +2,7 @@
 
 Day-to-day use, one page per service. For first-time setup see
 [QUICKSTART](../QUICKSTART.md); for how the parts fit together see
-[ARCHITECTURE](../ARCHITECTURE.md). Logins are in [`CREDENTIALS.md`](../CREDENTIALS.md).
+[ARCHITECTURE](../technical/ARCHITECTURE.md). Logins are in [`CREDENTIALS.md`](../CREDENTIALS.md).
 
 ## The flow
 

@@ -200,4 +200,4 @@ internet: [REMOTE-ACCESS.md](REMOTE-ACCESS.md).
 | No subtitles despite tracks existing | Jellyfin **Subtitle mode** is `Default` — set `Always Play` |
 
 Fuller explanations: [README troubleshooting](../README.md#troubleshooting) ·
-[user guide](user-guide/) · [architecture](ARCHITECTURE.md)
+[user guide](user-guide/) · [architecture](technical/ARCHITECTURE.md)

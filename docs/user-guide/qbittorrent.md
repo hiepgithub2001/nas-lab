@@ -83,7 +83,7 @@ in Radarr/Sonarr (not just in qBittorrent, or it gets re-grabbed).
 
 These are *container* paths (`/data` = the shared media root). Radarr/Sonarr mount the
 same root, which is what lets them hardlink finished downloads into the library
-instead of copying. See [ARCHITECTURE → storage](../ARCHITECTURE.md#storage-model-why-hardlinks-instead-of-copies).
+instead of copying. See [ARCHITECTURE → storage](../technical/ARCHITECTURE.md#storage-model-why-hardlinks-instead-of-copies).
 
 ## Password
 
