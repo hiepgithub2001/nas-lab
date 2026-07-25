@@ -11,61 +11,62 @@ Two situations are covered here:
 
 ## A. After a reboot
 
-**Short version: open a WSL terminal, wait a minute, done.**
+**Only one thing doesn't auto-start: WSL.** Everything else recovers by itself once WSL
+is running —
 
-Almost everything restarts by itself:
-
-| | Restarts automatically? |
+| Layer | Restarts by itself? |
 |---|---|
-| `tailscaled` (remote access) | Yes, once WSL runs — never needs re-authenticating |
-| Docker daemon | Yes, once WSL runs — enabled in systemd |
-| All 8 containers | Yes — `restart: unless-stopped` |
+| Docker daemon | Yes — systemd-enabled |
+| The containers (Radarr, Sonarr, Jellyfin, …) | Yes — `restart: unless-stopped` |
+| Tailscale (remote access) | Yes — systemd-managed, node key persists, no re-login |
+| GPU passthrough into Jellyfin | Yes — restored with the container |
 | **WSL2 itself** | **No** — Windows does not start it at boot |
 
-Everything runs *inside* WSL — Tailscale included — so nothing is up until WSL starts.
-Symptom from your phone: the machine shows **offline** in the Tailscale app.
+Everything (including Tailscale) runs *inside* WSL, so until WSL starts **nothing** is
+up. The tell-tale symptom: the machine shows **offline** in your phone's Tailscale app.
 
-**Start WSL** — open Windows Terminal / Ubuntu, or from PowerShell:
+### Bring it back — two steps
+
+**1. Start WSL** — open Windows Terminal / Ubuntu, or from PowerShell:
 
 ```powershell
 wsl.exe -d Ubuntu -u root /bin/true
 ```
 
-**Verify** (give it ~60 seconds):
+Give it ~30-60s; Docker, the containers and Tailscale come up on their own.
 
-```
+**2. Verify (and fix anything that didn't come up).** Easiest is the Claude Code skill
+**`start-media-stack`** — in a Claude session run `/start-media-stack`, or just ask to
+"start the media server". It brings the stack up and health-checks every layer
+(containers, Tailscale, GPU, all web UIs) in one pass.
+
+Without Claude, do the same by hand:
+
+```bash
 cd ~/self-host-film
-docker compose ps          # all services Up
+docker compose up -d        # start anything missing (idempotent)
+docker compose ps           # long-running services should show Up
+tailscale status            # this node online?
 ```
 
-If a container is missing:
+### Make even step 1 automatic
 
-```
-docker compose up -d
-```
-
-### Never think about it again
-
-Register a scheduled task once, in PowerShell:
+Register a scheduled task **once**, in PowerShell, so WSL starts at Windows logon:
 
 ```powershell
 schtasks /create /tn "Start WSL" /tr "wsl.exe -d Ubuntu -u root /bin/true" /sc onlogon /rl highest /f
 ```
 
-WSL then boots at logon and the stack comes up with it. Note this fires at **logon**,
-not power-on, so someone still has to sign into Windows.
+After this a reboot needs nothing from you — WSL boots at logon and the whole stack
+comes up with it. Caveat: it fires at **logon**, not power-on, so someone still has to
+sign into Windows.
 
-### Claude Code skill
-
-There's a Claude Code skill that starts the stack and health-checks every layer
-(containers, Tailscale, GPU, web UIs) in one go: **`start-media-stack`**. Invoke it in
-a Claude session — `/start-media-stack`, or just ask to "start the media server". The
-definition lives in this repo at `.claude/skills/start-media-stack/SKILL.md`; on a
-fresh machine, copy it to `~/.claude/skills/` to make it invocable:
-
-```bash
-mkdir -p ~/.claude/skills && cp -r .claude/skills/start-media-stack ~/.claude/skills/
-```
+> The `start-media-stack` skill lives in this repo at
+> `.claude/skills/start-media-stack/SKILL.md`. On a fresh machine, copy it to
+> `~/.claude/skills/` to make it invocable:
+> ```bash
+> mkdir -p ~/.claude/skills && cp -r .claude/skills/start-media-stack ~/.claude/skills/
+> ```
 
 ### Where to go
 
