@@ -49,6 +49,18 @@ docker compose ps           # long-running services should show Up
 tailscale status            # this node online?
 ```
 
+If `tailscale status` shows the node **down** (errors, "Logged out", or "Tailscale is
+stopped"), recover it — both commands need sudo:
+
+```bash
+sudo systemctl start tailscaled   # if the daemon isn't running
+sudo tailscale up                 # if it's logged out / stopped
+```
+
+`tailscale up` reconnects instantly with no browser login (the node key persists). It
+only prints a `https://login.tailscale.com/...` URL if the key expired (rare) — open it
+and sign in with the same account.
+
 ### Make even step 1 automatic
 
 Register a scheduled task **once**, in PowerShell, so WSL starts at Windows logon:
