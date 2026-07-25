@@ -109,8 +109,18 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      # NVIDIA GPU (RTX 4080 Super) for NVENC hardware transcoding
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config
       - ${DATA_ROOT}/media:/data/media
     ports:
       - 8096:8096
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
