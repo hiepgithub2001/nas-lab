@@ -112,20 +112,19 @@ merges them into one track — see [bazarr.md → dual-language](bazarr.md#dual-
 
 ## Transcoding — why playback sometimes stutters
 
-Transcoding here is **CPU-only** (no GPU passed into the container), so it's expensive.
-Common triggers:
+Transcoding on this system runs on the **RTX 4080 Super via NVENC**, so it's fast — a
+4K HDR transcode that would peg a CPU runs at a fraction of load. Full detail (how the
+Direct Play vs transcode decision is made, encode/decode, verification) is in
+**[TRANSCODING.md](../TRANSCODING.md)**. The essentials:
 
-- **4K HDR** (e.g. a 2160p remux) on a browser or a device that can't direct-play HEVC
-  — one such transcode can peg the CPU, and HDR→SDR tone-mapping looks washed out.
-- **DTS / TrueHD audio** the client can't decode. Browsers can't; a native app with a
-  receiver can. (Options for these are under **Settings → Playback → Video Advanced**,
-  but only enable if your device really supports them.)
-- **PGS subtitles** (above).
-
-Check what's happening during playback: **Dashboard → Activity** shows *Direct Play* vs
-*Transcoding*. If it stutters, the fix is usually a native client (**Jellyfin Media
-Player** on desktop, or a TV app) that can direct-play HEVC/HDR/TrueHD — or a smaller
-source (1080p over 4K).
+- A file is **transcoded** only when the client can't play the original — wrong codec
+  (4K HEVC/AV1 on a phone), too-high bitrate, unsupported container, or image-based
+  **PGS** subtitles. Otherwise it's **Direct Play** (untouched, best quality).
+- If playback looks **soft**, it's almost always the **client app's quality setting**
+  set too low, not the server — raise it in the app (tap player → quality → 20-40 Mbps
+  or Auto). See [TRANSCODING → the client bitrate trap](../TRANSCODING.md#quality-and-the-client-bitrate-trap).
+- Check what's happening live: **Dashboard → Activity** shows *Direct Play* vs
+  *Transcode (hw)*. The `(hw)` confirms it's on the GPU.
 
 ## Chapter markers and language
 

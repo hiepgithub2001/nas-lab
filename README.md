@@ -13,6 +13,7 @@ there. The rest of this README is the detailed reference behind those steps.
 | [Quickstart](docs/QUICKSTART.md) | Get it running: after a reboot, or from scratch |
 | [User Guide](docs/user-guide/) | Daily use — one page per service (Radarr, Sonarr, qBittorrent, Prowlarr, Bazarr, Jellyfin) |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
+| [Transcoding](docs/TRANSCODING.md) | GPU transcode/encode/decode, Direct Play vs transcode |
 | [Architecture](docs/ARCHITECTURE.md) | How the parts fit together internally |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
