@@ -257,6 +257,53 @@ external `.srt`, which is always text.
 If a subtitle file exists on disk but Jellyfin does not list it, refresh that item's
 metadata (**⋯ → Refresh metadata**) so Jellyfin rescans for sidecar files.
 
+### Dual-language subtitles (post-processing)
+
+Jellyfin cannot show two subtitle tracks at once. To get English + Vietnamese (or
+English + Chinese) on screen together, a small script merges two `.srt` files into a
+single new track. Bazarr runs it automatically after each subtitle download.
+
+The script lives at `scripts/merge-subs.py` in this repo and is deployed into Bazarr
+at `/config/scripts/merge-subs.py` (host path `appdata/bazarr/scripts/`). It **never
+edits the originals** — it writes a third file, so the single-language tracks stay
+selectable. Two layouts:
+
+| `--layout` | Output | On screen |
+|---|---|---|
+| `topbottom` | `.ass` | primary at the bottom (white), secondary on top (yellow) |
+| `stacked` | `.srt` | both languages stacked at the bottom |
+
+**Wire it into Bazarr** — **Settings → Subtitles → Post-Processing**, enable
+**"Use Custom Post-Processing"**, and set the command to pair English against every
+other language present:
+
+```
+python3 /config/scripts/merge-subs.py "{{subtitles}}" "{{subtitles_language_code2}}" --primary en --layout topbottom
+```
+
+`{{subtitles}}` is the file Bazarr just downloaded and `{{subtitles_language_code2}}`
+its language code — Bazarr fills both in. With no `--secondary`, the script pairs the
+primary (`en`) against each other language it finds beside the video, so one hook
+produces `Dual EN-VI`, `Dual EN-ZH`, and any future language. Save — no restart needed.
+
+**The catch: it can only merge subtitle _files_.** If a language is *embedded* in the
+`.mkv` (see [embedded vs external](#embedded-vs-external-subtitles)) there is no file
+to merge, so no dual track is produced. This is common for English on Blu-ray rips.
+To force Bazarr to download an external `.en.srt` instead of relying on the embedded
+one, turn **off** **Settings → Subtitles → Embedded Subtitles Handling → "Treat
+Embedded Subtitles as Downloaded"**, then **Wanted → Search All**. Bazarr then treats
+the embedded language as missing and fetches a real file the script can use.
+
+**Re-run on films already downloaded.** Post-processing only fires on *new* downloads,
+so existing subtitle files are not merged retroactively. Trigger it by hand:
+
+```
+docker exec bazarr python3 /config/scripts/merge-subs.py \
+  "/data/media/movies/<Film>/<Film>.en.srt" en --primary en --layout topbottom
+```
+
+Then refresh that item's metadata in Jellyfin so the new `Dual …` track appears.
+
 ## Following a download
 
 Three places to look, in order of usefulness:

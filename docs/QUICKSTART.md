@@ -153,6 +153,11 @@ Languages → create a profile → **enable it as the Default Language Profile f
 Movies and Series** (skip this and Bazarr silently ignores everything). Add providers.
 Connect Radarr/Sonarr with container names + API keys, then **restart Bazarr** —
 connection settings are only read at startup.
+For dual-language subtitles, deploy the merge script and set the post-processing
+hook — see the [user guide](USER-GUIDE.md#dual-language-subtitles-post-processing):
+```
+mkdir -p appdata/bazarr/scripts && cp scripts/merge-subs.py appdata/bazarr/scripts/
+```
 
 **7 · Jellyfin** — http://localhost:8096
 Create your admin account, add libraries `/data/media/movies` (Movies) and
