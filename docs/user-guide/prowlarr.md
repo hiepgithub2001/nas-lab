@@ -38,6 +38,29 @@ Wire it up once:
 The tag is the link: only tagged indexers route through FlareSolverr. Tag just the ones
 that need it.
 
+### "blocked by CloudFlare Protection" when FlareSolverr is already set up
+
+Most common cause: **the indexer isn't tagged**, so its requests never go through the
+proxy — even though FlareSolverr exists and can solve the challenge. A proxy only
+routes an indexer whose tags include the proxy's tag.
+
+Check both sides:
+
+```bash
+# the proxy's tag(s):
+docker exec prowlarr curl -s -H "X-Api-Key: <key>" \
+  http://localhost:9696/api/v1/indexerproxy | grep -o '"tags":\[[^]]*\]'
+# the indexer's tag(s):  (look for the failing one, e.g. 1337x)
+docker exec prowlarr curl -s -H "X-Api-Key: <key>" \
+  http://localhost:9696/api/v1/indexer | python3 -c 'import json,sys;[print(i["name"],i["tags"]) for i in json.load(sys.stdin)]'
+```
+
+If the indexer's `tags` is empty (or missing the proxy's tag), that's the problem. Fix
+in the UI: **Indexers → the indexer → Tags** → add the FlareSolverr tag → **Test →
+Save**. (Confirm FlareSolverr can solve the site at all with a direct probe:
+`docker exec prowlarr curl -sS -X POST http://flaresolverr:8191/v1 -H "Content-Type: application/json" -d '{"cmd":"request.get","url":"https://<site>/","maxTimeout":45000}'`
+— `solution.status: 200` means it can.)
+
 ## Connection errors
 
 Prowlarr's error message is generic, but the **last line** tells you the real cause and
