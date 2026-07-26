@@ -74,6 +74,15 @@ Note for some regions (e.g. Vietnam): ISPs DNS-block many torrent domains. The "
 mirror is whichever your ISP hasn't blocked — or switch the containers to Cloudflare
 DNS (`1.1.1.1`) to sidestep the blocks entirely.
 
+## "Other"-only indexers (won't reach Radarr/Sonarr)
+
+Some public indexers tag every result as **Other** (generic magnet/DHT search sites)
+and so never sync to Radarr or Sonarr — no Movies/TV category to match. You can remap
+them to Movies + TV with a custom definition so they feed both apps; see
+[indexer category remap](../technical/indexer-category-remap.md) for the technique and
+the `scripts/remap-indexer-multicat.sh` helper. Only do this for genuine film/TV search
+sites, not software-only ones (LinuxTracker, Mac Torrents, CrackingPatching).
+
 ## Usenet vs torrents
 
 Prowlarr handles both, but Usenet indexers (NZBGeek, etc.) only do the *searching*.
