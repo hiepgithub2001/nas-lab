@@ -115,6 +115,10 @@ services:
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config
       - ${DATA_ROOT}/media:/data/media
+      # WSL2 GPU driver libs, read live from the host. Without this the NVIDIA
+      # toolkit copies them in once at creation, and a later Windows driver
+      # update leaves the container stale -> "GPU access blocked by the OS".
+      - /usr/lib/wsl:/usr/lib/wsl:ro
     ports:
       - 8096:8096
     deploy:
