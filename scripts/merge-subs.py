@@ -158,7 +158,14 @@ def write_ass(path, bottom_cues, top_cues):
     white. Each keeps its own timing — independent event streams, no merge."""
 
     def line(start, end, style, text):
-        text = text.replace("\n", "\\N").replace("{", "(").replace("}", ")")
+        # ASS has no HTML markup — <i> would render as literal text. Escape the
+        # source's braces first so the override codes inserted below survive,
+        # then map italics to ASS and drop any other tag.
+        text = text.replace("{", "(").replace("}", ")")
+        text = re.sub(r"<\s*i\s*>", r"{\\i1}", text, flags=re.I)
+        text = re.sub(r"<\s*/\s*i\s*>", r"{\\i0}", text, flags=re.I)
+        text = re.sub(r"<[^>]+>", "", text)
+        text = text.replace("\n", "\\N")
         return f"Dialogue: 0,{ass_time(start)},{ass_time(end)},{style},,0,0,0,,{text}\n"
 
     with open(path, "w", encoding="utf-8") as fh:
