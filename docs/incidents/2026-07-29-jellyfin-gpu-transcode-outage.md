@@ -9,6 +9,15 @@ container, leaving it with stale driver libraries injected at creation time.
 [Follow-on](#follow-on-a-second-failure-mode-2026-07-30). The fix prevents *this*
 failure mode, not every way the GPU chain can break.
 
+> **Correction.** This report describes the cause as *stale libraries pinned at container
+> creation*. That is the documented toolkit behaviour, but the **observed** fact was that
+> `/usr/lib/wsl/lib` was **missing** inside the container, not merely old — "stale" was an
+> inference stated with more confidence than the evidence carried. The distinction
+> matters diagnostically: absent libraries give *"GPU access blocked by the operating
+> system"*, mismatched ones give *"Cannot load libcuda.so.1"*, and each points at a
+> different layer. See the
+> [2026-07-30 postmortem](2026-07-30-wsl-driver-libs-stale.md#correcting-the-first-postmortem).
+
 ---
 
 ## What broke, from the user's side

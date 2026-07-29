@@ -12,7 +12,13 @@ Resolved incidents, newest first.
 
 | Date | Incident | Impact | Root cause |
 |---|---|---|---|
-| 2026-07-29 | [Jellyfin GPU transcode outage](2026-07-29-jellyfin-gpu-transcode-outage.md) | All transcoding down ~2 days; direct-play unaffected | Windows NVIDIA driver updated under a long-running container, leaving stale injected driver libs |
+| 2026-07-30 | [WSL driver libraries stale after a Windows GPU update](2026-07-30-wsl-driver-libs-stale.md) 🔴 **open** | All transcoding down; Jellyfin then failed to start entirely | WSL imports driver libraries only at VM boot, so a mid-run Windows driver update left it 8 days behind |
+| 2026-07-29 | [Jellyfin GPU transcode outage](2026-07-29-jellyfin-gpu-transcode-outage.md) | All transcoding down ~2 days; direct-play unaffected | Container had no driver libraries while the host was healthy |
+
+The two are the **same shape at different layers** — see the
+[comparison table](2026-07-30-wsl-driver-libs-stale.md#comparison-of-the-two-incidents).
+One command tells them apart: if `nvidia-smi` works on the WSL host it is the 07-29
+shape; if it crashes it is the 07-30 shape.
 
 ## Known issues
 
