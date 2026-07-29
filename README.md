@@ -14,7 +14,10 @@ there. The rest of this README is the detailed reference behind those steps.
 | [User Guide](docs/user-guide/) | Daily use — one page per service (Radarr, Sonarr, qBittorrent, Prowlarr, Bazarr, Jellyfin) |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
 | [Transcoding](docs/technical/TRANSCODING.md) | GPU transcode/encode/decode, Direct Play vs transcode |
+| [FFmpeg](docs/technical/FFMPEG.md) | The engine underneath: reading its commands, logs, exit codes, and testing it directly |
+| [GPU passthrough](docs/technical/GPU-WSL-PASSTHROUGH.md) | How the GPU reaches Jellyfin across Windows → WSL → container, and the two ways it breaks |
 | [Architecture](docs/technical/ARCHITECTURE.md) | How the parts fit together internally |
+| [Incidents](docs/incidents/) | Postmortems and known issues — what broke, why, and what prevents it recurring |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
 ## How it fits together
