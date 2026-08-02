@@ -1,8 +1,17 @@
+# Container logs default to json-file with no size limit, which grows unbounded
+# until it fills the WSL ext4 root. Cap every service at 30 MB (3 x 10 MB).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
     restart: unless-stopped
+    logging: *default-logging
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     environment:
@@ -18,6 +27,7 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     restart: unless-stopped
+    logging: *default-logging
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     environment:
@@ -30,6 +40,7 @@ services:
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
     restart: unless-stopped
+    logging: *default-logging
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     environment:
@@ -46,6 +57,7 @@ services:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
     restart: unless-stopped
+    logging: *default-logging
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     environment:
@@ -62,6 +74,7 @@ services:
     image: lscr.io/linuxserver/bazarr:latest
     container_name: bazarr
     restart: unless-stopped
+    logging: *default-logging
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     environment:
@@ -78,6 +91,7 @@ services:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -96,6 +110,7 @@ services:
     container_name: recyclarr
     user: "${PUID}:${PGID}"
     restart: "no"
+    logging: *default-logging
     environment:
       - TZ=${TZ}
     volumes:
@@ -105,6 +120,7 @@ services:
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -128,3 +144,21 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # --- Monitoring ---------------------------------------------------------
+  # Live logs for every container, in a browser. Reachable over Tailscale, so
+  # you can read logs from a phone without opening a terminal.
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      - DOZZLE_NO_ANALYTICS=true
+    volumes:
+      # Read-only, but the Docker socket is still root-equivalent access —
+      # acceptable only because nothing here is exposed beyond the tailnet.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 8081:8080

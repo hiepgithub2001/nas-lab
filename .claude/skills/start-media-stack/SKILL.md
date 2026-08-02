@@ -121,11 +121,15 @@ Each should answer (302 = redirect to login, normal for the *arr apps; 200 for
 qBittorrent/Bazarr/Jellyfin):
 
 ```bash
-for p in 9696:Prowlarr 7878:Radarr 8989:Sonarr 6767:Bazarr 8080:qBittorrent 8191:FlareSolverr 8096:Jellyfin; do
+for p in 9696:Prowlarr 7878:Radarr 8989:Sonarr 6767:Bazarr 8080:qBittorrent 8191:FlareSolverr 8096:Jellyfin 8081:Dozzle; do
   code=$(curl -s -o /dev/null -m 8 -w '%{http_code}' "http://localhost:${p%%:*}/")
   echo "  ${p##*:} (${p%%:*}) -> HTTP $code"
 done
 ```
+
+If something is down, read its logs in Dozzle (http://localhost:8081) or with
+`lazydocker` rather than scrolling `docker compose logs` — see
+`docs/technical/MONITORING.md`.
 
 ## Step 6 — report
 
@@ -136,6 +140,8 @@ Give the user a short summary:
   (`http://admin-pc-1.tail9dbb76.ts.net:8096`)
 - GPU: available to Jellyfin or not
 - Local Jellyfin URL: `http://localhost:8096`
+- Disk headroom (`df -h /mnt/f /`) — flag it if the media drive is above 95%,
+  since a full drive breaks downloads and imports before it breaks a health check
 
 Keep it to the essentials — a green "all up" line plus anything that needed attention.
 

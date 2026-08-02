@@ -17,6 +17,7 @@ there. The rest of this README is the detailed reference behind those steps.
 | [FFmpeg](docs/technical/FFMPEG.md) | The engine underneath: reading its commands, logs, exit codes, and testing it directly |
 | [GPU passthrough](docs/technical/GPU-WSL-PASSTHROUGH.md) | How the GPU reaches Jellyfin across Windows → WSL → container, and the two ways it breaks |
 | [Architecture](docs/technical/ARCHITECTURE.md) | How the parts fit together internally |
+| [Monitoring](docs/technical/MONITORING.md) | Health checks and live logs — Dozzle, lazydocker, log rotation |
 | [Incidents](docs/incidents/) | Postmortems and known issues — what broke, why, and what prevents it recurring |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
@@ -72,6 +73,7 @@ configuration in detail — do it in this order, since each step depends on the 
 | FlareSolverr | http://localhost:8191 | Cloudflare-challenge solver for indexers |
 | Jellyfin | http://localhost:8096 | Media playback |
 | Recyclarr | CLI only | Syncs TRaSH quality profiles / custom formats |
+| Dozzle | http://localhost:8081 | Live container logs ([Monitoring](docs/technical/MONITORING.md)) |
 
 ### 1. Configure qBittorrent
 
