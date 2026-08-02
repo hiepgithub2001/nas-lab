@@ -43,7 +43,7 @@ Give it ~30-60s; Docker, the containers and Tailscale come up on their own.
 Without Claude, do the same by hand:
 
 ```bash
-cd ~/self-host-film
+cd ~/nas-lab
 docker compose up -d        # start anything missing (idempotent)
 docker compose ps           # long-running services should show Up
 tailscale status            # this node online?

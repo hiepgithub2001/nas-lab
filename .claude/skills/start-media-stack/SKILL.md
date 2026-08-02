@@ -6,7 +6,7 @@ description: Start and health-check the self-hosted film stack (Radarr, Sonarr, 
 # Start the self-hosted film stack
 
 Brings the Docker media stack up and verifies every layer after a reboot. The stack
-lives at `~/self-host-film` (compose file there). Full background is in that repo's
+lives at `~/nas-lab` (compose file there). Full background is in that repo's
 `docs/` (QUICKSTART, TRANSCODING, REMOTE-ACCESS).
 
 ## Context: what auto-starts and what doesn't
@@ -39,7 +39,7 @@ If neither works, the docker daemon is likely down — try `sudo systemctl start
 ## Step 1 — bring the stack up
 
 ```bash
-cd ~/self-host-film
+cd ~/nas-lab
 docker compose up -d          # or: sg docker -c "docker compose up -d"
 ```
 

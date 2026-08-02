@@ -27,7 +27,7 @@ the Radarr/Sonarr APIs, then exits. It has no web UI and no published port.
 flowchart TB
     You(["You (browser)"])
 
-    subgraph Docker["Docker bridge network (self-host-film)"]
+    subgraph Docker["Docker bridge network (nas-lab)"]
         Prowlarr["Prowlarr<br/>:9696"]
         Radarr["Radarr<br/>:7878"]
         Sonarr["Sonarr<br/>:8989"]

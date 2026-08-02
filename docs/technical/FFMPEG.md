@@ -108,7 +108,7 @@ this system had 368 of them. The **filename itself is diagnostic**: a
 Find the most recent failure:
 
 ```bash
-cd ~/self-host-film
+cd ~/nas-lab
 ls -1t appdata/jellyfin/log/FFmpeg.Transcode-*.log | head -1 | xargs tail -30
 ```
 
