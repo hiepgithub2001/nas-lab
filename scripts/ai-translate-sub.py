@@ -240,9 +240,29 @@ PROMPT = """You are translating film subtitles from English into Vietnamese.
 
 Rules:
 - Translate meaning, not word for word. Use natural spoken Vietnamese.
-- Choose pronouns from the relationship between the speakers, using the context.
+- Write "I (tôi)" wherever the English says I, me, my or I'm, and "you (bạn)"
+  wherever it says you, your or you're. This applies EVERY time the word
+  appears, including in the middle of a sentence and inside contractions — not
+  only at the start.
+- Never replace those with a relationship pronoun such as anh, em, chị, cô,
+  chú, ông or bà. Which one is correct depends on the speakers' ages and
+  status, which a single subtitle line does not carry, and guessing wrong is
+  worse than leaving it open.
+- Keep names of people, companies and places exactly as written. "Park" and
+  "Moo-sung Park" are a surname, not a park.
 - Keep each translation on ONE line. Do not merge or split entries.
 - Output exactly {n} lines, each "<number>. <Vietnamese>". Nothing else.
+
+Example input:
+  1. You should have told me the truth from the start.
+  2. I never meant for any of this to happen.
+  3. He's been lying to you and me this whole time.
+  4. I'm hit!
+Example output:
+  1. You (bạn) nên nói thật với I (tôi) từ đầu.
+  2. I (tôi) không hề muốn điều này xảy ra.
+  3. Anh ta đã lừa cả you (bạn) và I (tôi) suốt thời gian này.
+  4. I (tôi) trúng đạn rồi!
 {context}
 Translate these {n} lines:
 {lines}"""
@@ -367,29 +387,41 @@ def main():
         return 0
 
     # Flatten cues to translation units, remembering how to rebuild each cue.
-    units, layout = [], []  # layout: (n_units, split_lines, [(lead, trail)])
+    units, shouted, layout = [], [], []  # layout: (n_units, split_lines, [(lead, trail)])
     for _, _, text in cues:
         pieces, split = split_units(text)
         marks = []
         for piece in pieces:
             bare, lead, trail = strip_markup(piece)
-            units.append(bare)
+            # On-screen signage arrives in caps, and caps degrade the model
+            # badly — it left "MURDER" untranslated and turned "Moo-sung" into
+            # "MÔN SƠNG". Send sentence case and shout the result instead.
+            loud = bare.isupper() and any(c.isalpha() for c in bare)
+            units.append(bare.capitalize() if loud else bare)
+            shouted.append(loud)
             marks.append((lead, trail))
         layout.append((len(pieces), split, marks))
 
-    log(f"{len(cues)} cues -> {len(units)} units, {model}, batches of {batch_size}")
+    # Translate each distinct line once. Signage and catchphrases repeat, and
+    # translating every occurrence independently is why the same sign came out
+    # as both "CHỦ TỊCH" and "CHỦ TƯỚNG" in the first run.
+    unique = list(dict.fromkeys(u for u in units if u))
+    log(f"{len(cues)} cues -> {len(units)} units ({len(unique)} unique), "
+        f"{model}, batches of {batch_size}")
     if dry:
         log(f"dry run — would write {os.path.basename(out_path)}")
         return 0
 
-    translated, missed = [], 0
-    for start in range(0, len(units), batch_size):
-        chunk = units[start:start + batch_size]
-        context = units[max(0, start - context_size):start]
-        done, miss = translate_batch(model, chunk, context)
-        translated.extend(done)
+    done, missed = [], 0
+    for start in range(0, len(unique), batch_size):
+        chunk = unique[start:start + batch_size]
+        context = unique[max(0, start - context_size):start]
+        out, miss = translate_batch(model, chunk, context)
+        done.extend(out)
         missed += miss
-        log(f"  {min(start + batch_size, len(units))}/{len(units)}")
+        log(f"  {min(start + batch_size, len(unique))}/{len(unique)}")
+    lookup = dict(zip(unique, done))
+    translated = [lookup.get(u, u) for u in units]
 
     # Rebuild cues, restoring the markup that wrapped each unit.
     out_cues, pos = [], 0
@@ -397,7 +429,8 @@ def main():
         parts = []
         for j in range(count):
             lead, trail = marks[j]
-            parts.append(f"{lead}{translated[pos + j]}{trail}")
+            text = translated[pos + j]
+            parts.append(f"{lead}{text.upper() if shouted[pos + j] else text}{trail}")
         pos += count
         out_cues.append((start, end, ("\n" if split else " ").join(parts)))
 
