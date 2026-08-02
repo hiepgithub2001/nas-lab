@@ -74,20 +74,17 @@ pruning and a privileged container proved to be more instrument than one idle
 machine needs. Beszel answers the same day-to-day questions in a fraction of the
 interface.
 
-The losses are real and worth knowing:
+The losses are smaller than expected:
 
-| Lost | Consequence |
+| Concern | Reality |
 |---|---|
-| **systemd unit monitoring** | `tailscaled` and `postgresql` are no longer watched. If Tailscale dies, remote access dies and nothing notices. |
-| Per-application HTTP checks | A container can be "running" while the app inside is hung; only container state is tracked now. |
+| systemd units | **Not lost.** 37 units are tracked including `tailscaled`, `postgresql@16-main` and `docker` — but only because the agent mounts the dbus and systemd sockets. Without those it silently reports none. |
+| Per-application HTTP checks | Genuinely lost. A container can be "running" while the app inside is hung; only container state and resource usage are tracked. |
 | Per-process metrics, journald log viewing | Use `htop` and `journalctl` directly. |
 
-`tailscaled` is the one that stings, since remote playback depends on it
-entirely. Check it by hand when remote access misbehaves:
-
-```bash
-systemctl is-active tailscaled && tailscale status
-```
+Verified reporting on this machine: CPU, memory, load average, root disk, GPU,
+per-container CPU/memory/network for all ten containers, `F:\` at 98.7% via the
+extra-filesystems mount, and 37 systemd services.
 
 ## Container logs
 
