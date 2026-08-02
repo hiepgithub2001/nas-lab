@@ -177,6 +177,10 @@ services:
       - ${CONFIG_ROOT}/beszel/socket:/beszel_socket
       - ${CONFIG_ROOT}/beszel/agent:/var/lib/beszel-agent
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # systemd service monitoring — without these the agent can't talk to
+      # systemd and tailscaled/postgresql go unwatched.
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+      - /var/run/systemd/private:/var/run/systemd/private:ro
       # Extra disks are monitored by bind-mounting them here. Without this the
       # media drive - the one that actually fills up - is invisible.
       - /mnt/f:/extra-filesystems/mnt-f:ro
