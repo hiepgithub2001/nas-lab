@@ -145,20 +145,3 @@ services:
               count: all
               capabilities: [gpu]
 
-  # --- Monitoring ---------------------------------------------------------
-  # Live logs for every container, in a browser. Reachable over Tailscale, so
-  # you can read logs from a phone without opening a terminal.
-  dozzle:
-    image: amir20/dozzle:latest
-    container_name: dozzle
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      - TZ=${TZ}
-      - DOZZLE_NO_ANALYTICS=true
-    volumes:
-      # Read-only, but the Docker socket is still root-equivalent access —
-      # acceptable only because nothing here is exposed beyond the tailnet.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - 8081:8080
