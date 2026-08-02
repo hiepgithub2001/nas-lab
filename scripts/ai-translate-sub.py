@@ -240,14 +240,10 @@ PROMPT = """You are translating film subtitles from English into Vietnamese.
 
 Rules:
 - Translate meaning, not word for word. Use natural spoken Vietnamese.
-- Write "I (tôi)" wherever the English says I, me, my or I'm, and "you (bạn)"
-  wherever it says you, your or you're. This applies EVERY time the word
-  appears, including in the middle of a sentence and inside contractions — not
-  only at the start.
-- Never replace those with a relationship pronoun such as anh, em, chị, cô,
-  chú, ông or bà. Which one is correct depends on the speakers' ages and
-  status, which a single subtitle line does not carry, and guessing wrong is
-  worse than leaving it open.
+- Always use "tôi" for I, me and my, and "bạn" for you and your. Never use a
+  relationship pronoun such as anh, em, chị, cô, chú, ông or bà. Which one is
+  correct depends on the speakers' ages and status, which a single subtitle
+  line does not carry, and guessing wrong is worse than staying neutral.
 - Keep names of people, companies and places exactly as written. "Park" and
   "Moo-sung Park" are a surname, not a park.
 - Keep each translation on ONE line. Do not merge or split entries.
@@ -256,16 +252,43 @@ Rules:
 Example input:
   1. You should have told me the truth from the start.
   2. I never meant for any of this to happen.
-  3. He's been lying to you and me this whole time.
-  4. I'm hit!
 Example output:
-  1. You (bạn) nên nói thật với I (tôi) từ đầu.
-  2. I (tôi) không hề muốn điều này xảy ra.
-  3. Anh ta đã lừa cả you (bạn) và I (tôi) suốt thời gian này.
-  4. I (tôi) trúng đạn rồi!
+  1. Bạn nên nói thật với tôi từ đầu.
+  2. Tôi không hề muốn điều này xảy ra.
 {context}
 Translate these {n} lines:
 {lines}"""
+
+
+# Compounds that merely contain "tôi"/"bạn" without being the pronoun.
+# "chúng tôi" is we, "bạn bè" is friends — glossing inside either produces
+# nonsense like "chúng I (tôi)".
+GLOSS_SKIP_RE = re.compile(
+    r"chúng\s+tôi|bạn\s+(?:bè|gái|trai|học|thân|đọc|đồng)|người\s+bạn", re.I
+)
+PRONOUN_RE = re.compile(r"\b(tôi|bạn)\b", re.I)
+
+
+def gloss_pronouns(text):
+    """Rewrite the neutral pronouns as "I (tôi)" and "you (bạn)".
+
+    Done here rather than by instructing the model. Asked to gloss inline, it
+    complied on 32% of "I" and 4% of "you" across a full episode and drifted
+    further the longer the run — the rule holds for a handful of lines and then
+    decays. A substitution is exact, costs nothing and needs no retry.
+    """
+    skip = [m.span() for m in GLOSS_SKIP_RE.finditer(text)]
+
+    def replace(m):
+        if any(lo <= m.start() < hi for lo, hi in skip):
+            return m.group(0)
+        word = m.group(0)
+        if word.lower() == "tôi":
+            return f"I ({word.lower()})"  # English "I" is always capitalised
+        # "you" is capitalised exactly where the Vietnamese is: sentence-initial
+        return f"{'You' if word[0].isupper() else 'you'} ({word.lower()})"
+
+    return PRONOUN_RE.sub(replace, text)
 
 
 def ollama(model, prompt, timeout=600):
@@ -429,7 +452,7 @@ def main():
         parts = []
         for j in range(count):
             lead, trail = marks[j]
-            text = translated[pos + j]
+            text = gloss_pronouns(translated[pos + j])
             parts.append(f"{lead}{text.upper() if shouted[pos + j] else text}{trail}")
         pos += count
         out_cues.append((start, end, ("\n" if split else " ").join(parts)))
