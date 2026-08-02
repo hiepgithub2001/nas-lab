@@ -145,3 +145,55 @@ services:
               count: all
               capabilities: [gpu]
 
+  # --- Monitoring ---------------------------------------------------------
+  # Whole-machine monitoring: containers, host, systemd units (tailscaled,
+  # postgresql, docker), disks and GPU. Runs with host pid/network namespaces
+  # and /run/dbus mounted, which is what lets a *container* see the services
+  # that aren't containers. See docs/technical/MONITORING.md.
+  netdata:
+    image: netdata/netdata:stable
+    container_name: netdata
+    hostname: admin-pc-1
+    restart: unless-stopped
+    logging: *default-logging
+    pid: host
+    network_mode: host
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      - TZ=${TZ}
+      - DO_NOT_TRACK=1
+      # nvidia-smi is injected by the container toolkit, same as Jellyfin
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=utility
+    volumes:
+      - ${CONFIG_ROOT}/netdata/config:/etc/netdata
+      - ${CONFIG_ROOT}/netdata/lib:/var/lib/netdata
+      - ${CONFIG_ROOT}/netdata/cache:/var/cache/netdata
+      # WSL's / is neither shared nor slave, so the usual ro,rslave propagation
+      # flag is rejected by the daemon — a plain read-only bind works.
+      - /:/host/root:ro
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/log:/host/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # systemd unit + journal visibility from inside the container
+      - /run/dbus:/run/dbus:ro
+      # Same reason as Jellyfin: read the WSL driver libs live so a Windows
+      # driver update doesn't leave a stale copy behind.
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [utility]
+

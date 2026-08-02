@@ -1,6 +1,6 @@
 # Monitoring — health, logs and alerting
 
-One tool: **Netdata**, installed natively on the WSL host. It covers the whole
+One tool: **Netdata**, running with host namespaces so it monitors the whole
 machine rather than just the containers — which matters here, because two of the
 services this stack depends on don't run in Docker at all.
 
@@ -16,47 +16,69 @@ A Docker-only tool (Portainer, Dozzle, lazydocker) monitors the first row and is
 blind to the rest. If `tailscaled` dies, remote playback dies and nothing
 container-scoped notices.
 
-## Install
+## How it runs
 
-Needs root, so run it yourself:
+Netdata is a service in `docker-compose.yml`, but it is not a normal container —
+it needs to see *past* its own namespace to monitor the host:
 
-```bash
-wget -O /tmp/netdata-kickstart.sh https://get.netdata.cloud/kickstart.sh \
-  && sudo sh /tmp/netdata-kickstart.sh --stable-channel --disable-telemetry
+| Setting | Why |
+|---|---|
+| `pid: host`, `network_mode: host` | see host processes and sockets |
+| `/proc`, `/sys`, `/` mounted at `/host/...` | host CPU, memory, disks |
+| `/run/dbus:ro` | **systemd unit states** — `tailscaled`, `postgresql`, `docker` |
+| `/var/run/docker.sock:ro` | container discovery |
+| `/usr/lib/wsl:ro` + nvidia `utility` reservation | `nvidia-smi`, so the GPU appears |
+| `cap_add: SYS_PTRACE, SYS_ADMIN` | per-process metrics |
+
+That is a privileged deployment — roughly "read-only root on the host". It's the
+documented Netdata layout and the price of monitoring a machine from inside it.
+
+Open **http://localhost:19999**, or `100.69.57.57:19999` over Tailscale (see
+[Remote Access](../REMOTE-ACCESS.md)). No account, no signup, no Netdata Cloud —
+the agent collects and alerts standalone.
+
+> **WSL note.** `/` on WSL is neither a shared nor a slave mount, so the usual
+> `ro,rslave` propagation flag on the root bind is **rejected by the daemon** with
+> `path / is mounted on / but it is not a shared or slave mount`. A plain `:ro`
+> bind works and still yields correct disk metrics.
+
+> **GPU note.** Environment variables alone are not enough — without the
+> `deploy.resources.reservations.devices` block the container has no `nvidia-smi`
+> and the GPU section silently never appears. Same lesson as
+> [the Jellyfin outage](../incidents/2026-07-29-jellyfin-gpu-transcode-outage.md);
+> `/usr/lib/wsl` is mounted live for the same reason as
+> [the driver-libs incident](../incidents/2026-07-30-wsl-driver-libs-stale.md).
+
+## What it actually sees here — verified
+
+| Target | Chart | Status |
+|---|---|---|
+| Media drive | `disk_space./mnt/f` | monitored — 919.6 GB used / 11.9 GB free |
+| Tailscale | `systemdunits_service-units.unit_tailscaled_service_state` | active |
+| PostgreSQL | `unit_postgresql@16-main_service_state` | unit state yes, DB metrics need setup (below) |
+| All 9 containers | `cgroup_<name>.cpu` etc. | discovered automatically |
+| GPU | `nvidia_smi.gpu_*` incl. **encoder/decoder utilization** | working |
+
+The NVENC/NVDEC charts are worth knowing about: they show transcode load directly,
+replacing the manual `nvidia-smi` check in [Transcoding](TRANSCODING.md).
+
+`/mnt/f` being a `v9fs` (9p) mount turned out **not** to be excluded by the
+diskspace plugin's default filters — it is monitored without any configuration.
+
+### PostgreSQL metrics need a database user
+
+The collector finds the server but cannot authenticate, so you get unit state but no
+query/connection metrics. To enable them, create a read-only user:
+
+```sql
+CREATE USER netdata PASSWORD '<pick-one>';
+GRANT pg_monitor TO netdata;
 ```
 
-Then open **http://localhost:19999**. It is also reachable over Tailscale at
-`100.69.57.57:19999` (see [Remote Access](../REMOTE-ACCESS.md)). No account and no
-Netdata Cloud signup is required — the agent runs and alerts entirely standalone.
-
-Nothing needs configuring for discovery: it finds the containers, the systemd
-units, PostgreSQL, the disks and the GPU on its own.
-
-## Verify it sees what matters
-
-Netdata's defaults are generous but not guaranteed to match this machine. Check
-these three specifically, because each is a place where the useful signal could be
-missing while the dashboard still looks healthy:
-
-1. **`/mnt/f` appears under Disks.** This is the media drive — 932 GB, currently
-   99% full — and it is a **`v9fs`** (9p) mount, not a normal block device. If it
-   is absent from the disk-space charts, add its filesystem type back in:
-
-   ```bash
-   sudo /etc/netdata/edit-config netdata.conf
-   # under [plugin:proc:diskspace], check the two `exclude space metrics on ...`
-   # patterns and make sure neither matches /mnt/f or v9fs
-   ```
-
-   Getting this wrong produces the worst possible outcome: confident green alerting
-   on the 1 TB root filesystem (6% used) and silence on the drive that is actually
-   full.
-
-2. **The GPU section exists.** Requires `nvidia-smi`, which works under WSL. See
-   [GPU passthrough](GPU-WSL-PASSTHROUGH.md) if it's missing.
-
-3. **`tailscaled` and `postgresql` appear as systemd units**, so a failed state
-   raises an alarm.
+then add it to `go.d/postgres.conf` via
+`docker exec -it netdata /etc/netdata/edit-config go.d/postgres.conf`. Skip this if
+you don't care about database internals — the unit-state alarm still fires if
+PostgreSQL dies.
 
 ## Alerting
 
@@ -68,7 +90,8 @@ not write rules.
 Notifications are dispatched by the agent itself (no cloud), configured in one file:
 
 ```bash
-sudo /etc/netdata/edit-config health_alarm_notify.conf
+docker exec -it netdata /etc/netdata/edit-config health_alarm_notify.conf
+docker restart netdata
 ```
 
 27 integrations are supported. **Telegram** is the natural choice here since a bot
@@ -85,11 +108,20 @@ look abnormal to alarms written for bare metal. Left alone, Netdata will cry wol
 you will mute the channel, and the disk alert you actually needed will arrive
 somewhere you have stopped reading.
 
+Already observed in this install's logs, all harmless but all noise:
+
+- `python.d` modules failing to load (`haproxy`, `pandas`, `traefik`) — missing
+  Python deps for collectors nothing here uses
+- `libreswan` / `opensips` check failures — services that don't exist
+- the `maxscale` collector false-matching **Sonarr on :8989** and failing to parse
+  its HTML
+
 Disable what isn't real, early:
 
 ```bash
-sudo /etc/netdata/edit-config health.d/<alarm-family>.conf   # set: to: silent
-sudo systemctl restart netdata
+docker exec -it netdata /etc/netdata/edit-config health.d/<alarm-family>.conf
+# set:  to: silent
+docker restart netdata
 ```
 
 Keep: disk space, memory, systemd unit state, container state, PostgreSQL.
