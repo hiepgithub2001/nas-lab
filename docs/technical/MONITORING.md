@@ -1,165 +1,111 @@
-# Monitoring — health, logs and alerting
+# Monitoring — health and alerting
 
-One tool: **Netdata**, running with host namespaces so it monitors the whole
-machine rather than just the containers — which matters here, because two of the
-services this stack depends on don't run in Docker at all.
+One tool: **Beszel** — a hub (web UI) plus an agent (collector), both small.
+It covers host and container health with history and alerting, and is
+deliberately minimal: a handful of legible charts rather than a chart tree.
 
-| | Where it runs | Netdata sees it |
-|---|---|---|
-| Jellyfin, *arr apps, qBittorrent | Docker | yes, via cgroups |
-| **`tailscaled`** — all remote access | systemd, on the host | yes |
-| **`postgresql@16-main`** | systemd, on the host | yes, with a dedicated collector |
-| `docker.service`, `containerd` | systemd, on the host | yes |
-| RTX 4080 Super | host hardware | yes, via `nvidia-smi` |
+**http://localhost:8091**, or `100.69.57.57:8091` over Tailscale (see
+[Remote Access](../REMOTE-ACCESS.md)).
 
-A Docker-only tool (Portainer, Dozzle, lazydocker) monitors the first row and is
-blind to the rest. If `tailscaled` dies, remote playback dies and nothing
-container-scoped notices.
+> Beszel's default port is 8090, but on this machine a **Windows** process
+> already holds it. WSL forwards `localhost` to Windows, so the port answers
+> (HTTP 501) while `ss` shows nothing listening inside WSL — and Docker's bind
+> fails with `address already in use`. The hub is published on **8091** instead.
 
-## How it runs
+## What it monitors
 
-Netdata is a service in `docker-compose.yml`, but it is not a normal container —
-it needs to see *past* its own namespace to monitor the host:
-
-| Setting | Why |
+| Target | How |
 |---|---|
-| `pid: host`, `network_mode: host` | see host processes and sockets |
-| `/proc`, `/sys`, `/` mounted at `/host/...` | host CPU, memory, disks |
-| `/run/dbus:ro` | **systemd unit states** — `tailscaled`, `postgresql`, `docker` |
-| `/var/run/docker.sock:ro` | container discovery |
-| `/usr/lib/wsl:ro` + nvidia `utility` reservation | `nvidia-smi`, so the GPU appears |
-| `cap_add: SYS_PTRACE, SYS_ADMIN` | per-process metrics |
+| Host CPU, memory, network, load | agent with `network_mode: host` |
+| Root disk | `sdd` (the WSL ext4 VHDX) |
+| **Media drive** `/mnt/f` | bind-mounted to `/extra-filesystems/mnt-f:ro` |
+| All containers, individually | `/var/run/docker.sock:ro` |
+| GPU | `henrygd/beszel-agent-nvidia` + nvidia `utility` reservation, `/usr/lib/wsl` |
 
-That is a privileged deployment — roughly "read-only root on the host". It's the
-documented Netdata layout and the price of monitoring a machine from inside it.
+Extra disks are **not** auto-discovered in Docker — they are monitored by
+bind-mounting them under `/extra-filesystems/`. Without that line the media
+drive, the one that actually fills up, is invisible while the dashboard stays
+green about the healthy root filesystem.
 
-Open **http://localhost:19999**, or `100.69.57.57:19999` over Tailscale (see
-[Remote Access](../REMOTE-ACCESS.md)). No account, no signup, no Netdata Cloud —
-the agent collects and alerts standalone.
+> The agent logs `WARN Device not found in diskstats name=F:\` on startup. That
+> is I/O throughput stats being unavailable for a 9p mount — **space usage is
+> still collected correctly**, which is the part that matters here.
 
-> **WSL note.** `/` on WSL is neither a shared nor a slave mount, so the usual
-> `ro,rslave` propagation flag on the root bind is **rejected by the daemon** with
-> `path / is mounted on / but it is not a shared or slave mount`. A plain `:ro`
-> bind works and still yields correct disk metrics.
+## First-run setup
 
-> **GPU note.** Environment variables alone are not enough — without the
-> `deploy.resources.reservations.devices` block the container has no `nvidia-smi`
-> and the GPU section silently never appears. Same lesson as
-> [the Jellyfin outage](../incidents/2026-07-29-jellyfin-gpu-transcode-outage.md);
-> `/usr/lib/wsl` is mounted live for the same reason as
-> [the driver-libs incident](../incidents/2026-07-30-wsl-driver-libs-stale.md).
+The hub needs an account and the agent needs registering. Both are one-time, in
+the web UI:
 
-## What it actually sees here — verified
+1. Open http://localhost:8091 and create the admin account. Record it in
+   `CREDENTIALS.md`.
+2. **Add System** → give it a name, set **Host** to `/beszel_socket/beszel.sock`
+   and leave the port empty. The hub and agent share that socket through
+   `appdata/beszel/socket`, so nothing is exposed on the network.
+3. Green in the systems table means connected.
 
-| Target | Chart | Status |
-|---|---|---|
-| Media drive | `disk_space./mnt/f` | monitored — 919.6 GB used / 11.9 GB free |
-| Tailscale | `systemdunits_service-units.unit_tailscaled_service_state` | active |
-| PostgreSQL | `unit_postgresql@16-main_service_state` | unit state yes, DB metrics need setup (below) |
-| All 9 containers | `cgroup_<name>.cpu` etc. | discovered automatically |
-| GPU | `nvidia_smi.gpu_*` incl. **encoder/decoder utilization** | working |
-
-The NVENC/NVDEC charts are worth knowing about: they show transcode load directly,
-replacing the manual `nvidia-smi` check in [Transcoding](TRANSCODING.md).
-
-`/mnt/f` being a `v9fs` (9p) mount turned out **not** to be excluded by the
-diskspace plugin's default filters — it is monitored without any configuration.
-
-### PostgreSQL metrics need a database user
-
-The collector finds the server but cannot authenticate, so you get unit state but no
-query/connection metrics. To enable them, create a read-only user:
-
-```sql
-CREATE USER netdata PASSWORD '<pick-one>';
-GRANT pg_monitor TO netdata;
-```
-
-then add it to `go.d/postgres.conf` via
-`docker exec -it netdata /etc/netdata/edit-config go.d/postgres.conf`. Skip this if
-you don't care about database internals — the unit-state alarm still fires if
-PostgreSQL dies.
+The agent authenticates the hub with the hub's own SSH key, carried in `.env` as
+`BESZEL_KEY`. It is generated on the hub's first run at
+`appdata/beszel/data/id_ed25519`; the public half is derived with
+`ssh-keygen -y -f id_ed25519`. Only the public key goes in `.env`.
 
 ## Alerting
 
-Hundreds of alarms ship enabled and pre-tuned — disk space with predicted
-time-to-full, inode exhaustion, RAM and swap pressure, network errors, systemd
-units entering a failed state, container states, and PostgreSQL specifics. You do
-not write rules.
+Configured per-system in the UI, with thresholds on CPU, memory, disk, bandwidth,
+temperature, load average and status. Notifications go out by email or webhook.
 
-Notifications are dispatched by the agent itself (no cloud), configured in one file:
+**Set the disk alert first.** `/mnt/f` sits at 99%, and it is the failure mode
+that actually breaks this stack — downloads and imports fail while every service
+keeps answering normally.
+
+### What Beszel cannot alert on
+
+- **The machine being down.** The agent runs on the machine it watches, and this
+  stack [starts manually by design](../QUICKSTART.md). Machine-level downtime
+  needs a watcher off the box — a dead-man's-switch such as
+  [Healthchecks.io](https://healthchecks.io/), where a cron pings out and the
+  external service alerts when pings stop.
+- **`tailscaled` failing.** See below.
+
+## What was given up, and why
+
+Netdata was installed here first and then swapped out. It monitored strictly
+more — but 1,881 charts, config through `docker exec`, collector noise needing
+pruning and a privileged container proved to be more instrument than one idle
+machine needs. Beszel answers the same day-to-day questions in a fraction of the
+interface.
+
+The losses are real and worth knowing:
+
+| Lost | Consequence |
+|---|---|
+| **systemd unit monitoring** | `tailscaled` and `postgresql` are no longer watched. If Tailscale dies, remote access dies and nothing notices. |
+| Per-application HTTP checks | A container can be "running" while the app inside is hung; only container state is tracked now. |
+| Per-process metrics, journald log viewing | Use `htop` and `journalctl` directly. |
+
+`tailscaled` is the one that stings, since remote playback depends on it
+entirely. Check it by hand when remote access misbehaves:
 
 ```bash
-docker exec -it netdata /etc/netdata/edit-config health_alarm_notify.conf
-docker restart netdata
+systemctl is-active tailscaled && tailscale status
 ```
-
-27 integrations are supported. **Telegram** is the natural choice here since a bot
-already exists for this setup — set `SEND_TELEGRAM="YES"`, then `TELEGRAM_BOT_TOKEN`
-and `DEFAULT_RECIPIENT_TELEGRAM` (your chat ID).
-
-Expect a **critical disk alarm immediately** once `/mnt/f` is monitored. At 99% that
-is correct, not a misconfiguration.
-
-### Prune the noise in week one
-
-WSL exposes no thermal sensors and presents virtual network and disk devices that
-look abnormal to alarms written for bare metal. Left alone, Netdata will cry wolf,
-you will mute the channel, and the disk alert you actually needed will arrive
-somewhere you have stopped reading.
-
-Already observed in this install's logs, all harmless but all noise:
-
-- `python.d` modules failing to load (`haproxy`, `pandas`, `traefik`) — missing
-  Python deps for collectors nothing here uses
-- `libreswan` / `opensips` check failures — services that don't exist
-- the `maxscale` collector false-matching **Sonarr on :8989** and failing to parse
-  its HTML
-
-Disable what isn't real, early:
-
-```bash
-docker exec -it netdata /etc/netdata/edit-config health.d/<alarm-family>.conf
-# set:  to: silent
-docker restart netdata
-```
-
-Keep: disk space, memory, systemd unit state, container state, PostgreSQL.
-
-### What Netdata cannot alert on: itself
-
-Netdata runs *on* the machine it watches. This stack
-[starts manually by design](../QUICKSTART.md) and WSL stops when Windows sleeps or
-shuts down — so the agent is down at precisely the moments you would most want to
-hear from it. **It can never tell you the server is offline.**
-
-That is also why an uptime monitor *on this host* (Uptime Kuma and similar) is
-pointless, and it was tried and removed here for that reason.
-
-Machine-level downtime requires a watcher **off the box** — a dead-man's-switch such
-as [Healthchecks.io](https://healthchecks.io/): a cron job pings out on a schedule,
-and the external service alerts you when the pings stop. Roughly ten minutes to set
-up, and the only architecture that catches "the whole machine is gone".
 
 ## Container logs
 
-Netdata reads journald — so host services (`tailscaled`, `postgresql`, `docker`) are
-covered — but it does **not** read Docker container logs. That gap is filled at zero
-cost:
+Beszel does not read logs. That gap is filled at zero cost:
 
 ```bash
 docker compose logs -f radarr              # one service, live
 docker compose logs -f radarr qbittorrent  # interleaved, for correlating
 ```
 
-Application logs are often better still: the *arr apps write their own rotated logs
-to `appdata/<app>/logs/*.txt` with the detail the container stream omits — indexer
-queries, import decisions, API errors. Jellyfin's ffmpeg transcode logs are in
-`appdata/jellyfin/log/` (see [FFmpeg](FFMPEG.md)).
+Application logs are often better still: the *arr apps write their own rotated
+logs to `appdata/<app>/logs/*.txt` with detail the container stream omits —
+indexer queries, import decisions, API errors. Jellyfin's ffmpeg transcode logs
+are in `appdata/jellyfin/log/` (see [FFmpeg](FFMPEG.md)).
 
-**Dozzle and lazydocker were used here and then removed.** Both are good, but both
-are Docker-only, and keeping a second and third tool to cover a subset of what
-Netdata already shows was not worth the maintenance — including, in Dozzle's case, a
+**Dozzle and lazydocker were used here and then removed.** Both were good at
+logs specifically, but keeping extra tools to cover a subset of what one tool
+shows was not worth the maintenance — including, in Dozzle's case, a
 root-equivalent Docker socket mount.
 
 ## Why not Kubernetes

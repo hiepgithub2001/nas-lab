@@ -127,7 +127,7 @@ for p in 9696:Prowlarr 7878:Radarr 8989:Sonarr 6767:Bazarr 8080:qBittorrent 8191
 done
 ```
 
-If something is down, check Netdata (http://localhost:19999) for host-level causes
+If something is down, check Beszel (http://localhost:8091) for host-level causes
 and `docker compose logs -f <name>` for the container's own output — see
 `docs/technical/MONITORING.md`.
 

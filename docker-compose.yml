@@ -146,51 +146,41 @@ services:
               capabilities: [gpu]
 
   # --- Monitoring ---------------------------------------------------------
-  # Whole-machine monitoring: containers, host, systemd units (tailscaled,
-  # postgresql, docker), disks and GPU. Runs with host pid/network namespaces
-  # and /run/dbus mounted, which is what lets a *container* see the services
-  # that aren't containers. See docs/technical/MONITORING.md.
-  netdata:
-    image: netdata/netdata:stable
-    container_name: netdata
-    hostname: admin-pc-1
+  # Beszel: host + container health with history and alerts. Hub is the web UI,
+  # agent collects. See docs/technical/MONITORING.md.
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
     restart: unless-stopped
     logging: *default-logging
-    pid: host
-    network_mode: host
-    cap_add:
-      - SYS_PTRACE
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
     environment:
       - TZ=${TZ}
-      - DO_NOT_TRACK=1
-      # nvidia-smi is injected by the container toolkit, same as Jellyfin
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=utility
     volumes:
-      - ${CONFIG_ROOT}/netdata/config:/etc/netdata
-      # Per-app HTTP health checks. Kept in the repo (appdata/ is gitignored)
-      # so a fresh clone monitors the services, not just the containers.
-      - ./config/netdata/httpcheck.conf:/etc/netdata/go.d/httpcheck.conf:ro
-      - ${CONFIG_ROOT}/netdata/lib:/var/lib/netdata
-      - ${CONFIG_ROOT}/netdata/cache:/var/cache/netdata
-      # WSL's / is neither shared nor slave, so the usual ro,rslave propagation
-      # flag is rejected by the daemon — a plain read-only bind works.
-      - /:/host/root:ro
-      - /etc/passwd:/host/etc/passwd:ro
-      - /etc/group:/host/etc/group:ro
-      - /etc/localtime:/etc/localtime:ro
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /etc/os-release:/host/etc/os-release:ro
-      - /var/log:/host/var/log:ro
+      - ${CONFIG_ROOT}/beszel/data:/beszel_data
+      - ${CONFIG_ROOT}/beszel/socket:/beszel_socket
+    ports:
+      # 8090 is Beszel's default but is already held by a Windows process that
+      # WSL forwards localhost to, so the bind fails. 8091 on the host instead.
+      - 8091:8090
+
+  beszel-agent:
+    image: henrygd/beszel-agent-nvidia:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+      - LISTEN=/beszel_socket/beszel.sock
+      - KEY=${BESZEL_KEY}
+    volumes:
+      - ${CONFIG_ROOT}/beszel/socket:/beszel_socket
+      - ${CONFIG_ROOT}/beszel/agent:/var/lib/beszel-agent
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # systemd unit + journal visibility from inside the container
-      - /run/dbus:/run/dbus:ro
-      # Same reason as Jellyfin: read the WSL driver libs live so a Windows
-      # driver update doesn't leave a stale copy behind.
+      # Extra disks are monitored by bind-mounting them here. Without this the
+      # media drive - the one that actually fills up - is invisible.
+      - /mnt/f:/extra-filesystems/mnt-f:ro
+      # nvidia-smi for GPU stats, same pattern as Jellyfin
       - /usr/lib/wsl:/usr/lib/wsl:ro
     deploy:
       resources:
@@ -199,4 +189,3 @@ services:
             - driver: nvidia
               count: all
               capabilities: [utility]
-
