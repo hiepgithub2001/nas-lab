@@ -1,4 +1,4 @@
-# self-host-film
+# nas-lab
 
 Self-hosted media automation stack on bare metal + Docker (WSL2), based on
 [TRaSH Guides](https://trash-guides.info/).
