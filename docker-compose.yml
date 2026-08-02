@@ -171,6 +171,9 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=utility
     volumes:
       - ${CONFIG_ROOT}/netdata/config:/etc/netdata
+      # Per-app HTTP health checks. Kept in the repo (appdata/ is gitignored)
+      # so a fresh clone monitors the services, not just the containers.
+      - ./config/netdata/httpcheck.conf:/etc/netdata/go.d/httpcheck.conf:ro
       - ${CONFIG_ROOT}/netdata/lib:/var/lib/netdata
       - ${CONFIG_ROOT}/netdata/cache:/var/cache/netdata
       # WSL's / is neither shared nor slave, so the usual ro,rslave propagation
