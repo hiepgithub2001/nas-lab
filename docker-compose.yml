@@ -175,6 +175,28 @@ services:
               count: all
               capabilities: [gpu]
 
+  # Chat UI for the Ollama server above: model picker, editable system prompt
+  # and per-request options, so translation prompts can be compared without
+  # hand-writing curl calls. CPU-only, no GPU reservation.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      # Reached over the compose network, so this keeps working regardless of
+      # what the host publishes 11434 as.
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # This box runs local models only. Left on, the OpenAI integration probes
+      # api.openai.com at every start and stalls the model list when it fails.
+      - ENABLE_OPENAI_API=false
+    volumes:
+      - ${CONFIG_ROOT}/open-webui:/app/backend/data
+    ports:
+      # Serves on 8080 inside the container; 8080 on the host is qbittorrent.
+      - 3000:8080
+
   # --- Monitoring ---------------------------------------------------------
   # Beszel: host + container health with history and alerts. Hub is the web UI,
   # agent collects. See docs/technical/MONITORING.md.
