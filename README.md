@@ -18,6 +18,7 @@ there. The rest of this README is the detailed reference behind those steps.
 | [GPU passthrough](docs/technical/GPU-WSL-PASSTHROUGH.md) | How the GPU reaches Jellyfin across Windows → WSL → container, and the two ways it breaks |
 | [Architecture](docs/technical/ARCHITECTURE.md) | How the parts fit together internally |
 | [Monitoring](docs/technical/MONITORING.md) | Health and alerting — Beszel, log rotation |
+| [LLM subtitles](docs/technical/LLM-SUBTITLES.md) | Ollama + Qwen for English → Vietnamese subtitle translation |
 | [Incidents](docs/incidents/) | Postmortems and known issues — what broke, why, and what prevents it recurring |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
@@ -74,6 +75,7 @@ configuration in detail — do it in this order, since each step depends on the 
 | Jellyfin | http://localhost:8096 | Media playback |
 | Recyclarr | CLI only | Syncs TRaSH quality profiles / custom formats |
 | Beszel | http://localhost:8091 | Host + container health, alerting ([Monitoring](docs/technical/MONITORING.md)) |
+| Ollama | http://localhost:11434 | Local LLM for subtitle translation ([LLM subtitles](docs/technical/LLM-SUBTITLES.md)) |
 
 ### 1. Configure qBittorrent
 

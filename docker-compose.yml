@@ -145,6 +145,36 @@ services:
               count: all
               capabilities: [gpu]
 
+  # --- LLM ----------------------------------------------------------------
+  # Local model server, used for English -> Vietnamese subtitle translation.
+  # See docs/technical/LLM-SUBTITLES.md.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      # Unload the model once idle. Jellyfin's NVENC transcodes and this share
+      # the same 16 GB of VRAM, and a loaded model squatting on ~5-9 GB is how
+      # a 4K HDR transcode ends up failing.
+      - OLLAMA_KEEP_ALIVE=5m
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      # Models go on the ext4 root (~900 GB free), never /mnt/f (12 GB, 9p).
+      - ${CONFIG_ROOT}/ollama:/root/.ollama
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    ports:
+      - 11434:11434
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   # --- Monitoring ---------------------------------------------------------
   # Beszel: host + container health with history and alerts. Hub is the web UI,
   # agent collects. See docs/technical/MONITORING.md.
