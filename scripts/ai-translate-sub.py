@@ -269,8 +269,14 @@ GLOSS_SKIP_RE = re.compile(
 PRONOUN_RE = re.compile(r"\b(tôi|bạn)\b", re.I)
 
 
+GLOSS = {"tôi": "I (TÔI)", "bạn": "YOU (BẠN)"}
+
+
 def gloss_pronouns(text):
-    """Rewrite the neutral pronouns as "I (tôi)" and "you (bạn)".
+    """Rewrite the neutral pronouns as "I (TÔI)" and "YOU (BẠN)".
+
+    Fully capitalised on purpose: these are the two words the viewer is meant to
+    resolve themselves from context, so they should be impossible to skim past.
 
     Done here rather than by instructing the model. Asked to gloss inline, it
     complied on 32% of "I" and 4% of "you" across a full episode and drifted
@@ -282,11 +288,7 @@ def gloss_pronouns(text):
     def replace(m):
         if any(lo <= m.start() < hi for lo, hi in skip):
             return m.group(0)
-        word = m.group(0)
-        if word.lower() == "tôi":
-            return f"I ({word.lower()})"  # English "I" is always capitalised
-        # "you" is capitalised exactly where the Vietnamese is: sentence-initial
-        return f"{'You' if word[0].isupper() else 'you'} ({word.lower()})"
+        return GLOSS[m.group(0).lower()]
 
     return PRONOUN_RE.sub(replace, text)
 
