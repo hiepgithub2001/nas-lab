@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-Build one bottom-anchored, all-yellow dual-language subtitle track.
+Rewrite the Dual EN-VI track so both languages sit at the bottom, both yellow.
 
-A sibling of merge-subs.py with a different goal. merge-subs.py's "topbottom"
-layout separates the languages — English yellow at the bottom, the other white
-at the top — which reads well on a TV and badly on a phone, where the top line
-sits far from the eye and white on bright footage disappears.
+merge-subs.py's "topbottom" layout separates the languages — English yellow at
+the bottom, the other white at the top — which reads well on a TV and badly on
+a phone, where the top line sits far from the eye and white on bright footage
+disappears.
 
-This writes both languages stacked in a single block at the bottom, both in the
-same yellow, using merge-subs.py's Bottom style verbatim so the two scripts
-agree on position, size and colour.
+This REPLACES that track rather than adding another one: it writes to the exact
+path merge-subs.py --layout topbottom produces, so Jellyfin keeps showing a
+single "Dual EN-VI" entry and the viewer has no third option to choose between.
+Both languages end up stacked in one block using merge-subs.py's Bottom style
+verbatim, so position, size and colour match what was already there.
 
-Originals are never modified, and it exits quietly when the counterpart is
-missing, so it is safe to run over a whole library.
+Because it overwrites merge-subs.py's output, it must run AFTER merge-subs.py.
+
+The source .srt files are never modified, and it exits quietly when the
+counterpart is missing, so it is safe to run over a whole library.
 
 Usage:
   bottom-yellow-gen.py <subtitle_path> <lang_code2> [options]
@@ -23,13 +27,9 @@ Options:
   --vi WHICH        Which Vietnamese track to pair with when both exist:
                     ai | provider | auto                   (default: auto)
   --fontsize N      Override the shared size of 54         (default: 54)
-  --force           Overwrite an existing output file
 
-Output:
-  <video basename>.Bottom Yellow <PRI>-<SEC>.<primary3>.ass
-
-Jellyfin reads the ".<title>.<lang>.ass" convention, so the track appears named
-"Bottom Yellow EN-VI" alongside merge-subs.py's "Dual EN-VI".
+Output (overwritten in place):
+  <video basename>.Dual <PRI>-<SEC>.<primary3>.ass
 """
 
 import os
@@ -219,7 +219,6 @@ def find_counterpart(sub_path, want, prefer="auto"):
 def main():
     argv = sys.argv[1:]
     args = [a for a in argv if not a.startswith("--")]
-    flags = {a.lstrip("-") for a in argv if a.startswith("--") and "=" not in a}
     opts = dict(
         a.lstrip("-").split("=", 1) for a in argv if a.startswith("--") and "=" in a
     )
@@ -232,14 +231,11 @@ def main():
     secondary = canonical(opts.get("secondary", "vi"))
     prefer = opts.get("vi", "auto")
     fontsize = opts.get("fontsize", "54")
-    force = "force" in flags
 
     if lang not in (primary, secondary):
         return 0
-    if ".bottom yellow " in os.path.basename(sub_path).lower():
-        return 0  # our own output
     if ".dual " in os.path.basename(sub_path).lower():
-        return 0  # merge-subs.py's output
+        return 0  # merge-subs.py's output, and now ours too
 
     # Work from the primary track, whichever side triggered us.
     if lang == primary:
@@ -254,12 +250,11 @@ def main():
         log(f"no {missing} counterpart for {os.path.basename(sub_path)} yet")
         return 0
 
+    # Same path merge-subs.py --layout topbottom writes, so this replaces that
+    # track instead of adding a second one to Jellyfin's subtitle menu.
     out = (f"{os.path.join(os.path.dirname(pri_path) or '.', stem_of(pri_path))}"
-           f".Bottom Yellow {primary.upper()}-{secondary.upper()}"
+           f".Dual {primary.upper()}-{secondary.upper()}"
            f".{LANG3.get(primary, primary)}.ass")
-    if os.path.exists(out) and not force:
-        log(f"exists, skipping: {os.path.basename(out)} (use --force)")
-        return 0
 
     pri, sec = parse_srt(pri_path), parse_srt(sec_path)
     if not pri or not sec:
@@ -271,8 +266,9 @@ def main():
         log("merged empty, skipping")
         return 0
 
+    verb = "replaced" if os.path.exists(out) else "wrote"
     write_ass(out, cues, fontsize)
-    log(f"wrote {os.path.basename(out)} — {len(cues)} cues, "
+    log(f"{verb} {os.path.basename(out)} — {len(cues)} cues, "
         f"{secondary} from the {which} track, size {fontsize}")
     return 0
 
