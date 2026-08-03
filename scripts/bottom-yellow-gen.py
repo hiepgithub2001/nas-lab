@@ -1,35 +1,36 @@
 #!/usr/bin/env python3
 """
-Rewrite the Dual EN-VI track so both languages sit at the bottom, both yellow.
+Restyle each subtitle language into its own bottom-anchored yellow track.
 
-merge-subs.py's "topbottom" layout separates the languages — English yellow at
-the bottom, the other white at the top — which reads well on a TV and badly on
-a phone, where the top line sits far from the eye and white on bright footage
-disappears.
+Not a merge. Given a video's English and Vietnamese subtitles, this writes two
+independent single-language tracks:
 
-This REPLACES that track rather than adding another one: it writes to the exact
-path merge-subs.py --layout topbottom produces, so Jellyfin keeps showing a
-single "Dual EN-VI" entry and the viewer has no third option to choose between.
-Both languages end up stacked in one block using merge-subs.py's Bottom style
-verbatim, so position, size and colour match what was already there.
+  <video>.English-custom.eng.ass
+  <video>.Vietnamese-custom.vie.ass
 
-Because it overwrites merge-subs.py's output, it must run AFTER merge-subs.py.
+Both use merge-subs.py's Bottom style verbatim — Arial 54, yellow with a black
+outline, bottom centre, 40px up from the edge — which is the size and position
+that reads well on a phone. The difference from merge-subs.py is that nothing is
+stacked: each language stands alone, so the viewer picks one from Jellyfin's
+subtitle menu and gets large yellow text at the bottom either way.
 
-The source .srt files are never modified, and it exits quietly when the
-counterpart is missing, so it is safe to run over a whole library.
+Existing tracks are left alone: the source .srt files, and merge-subs.py's
+"Dual EN-VI" track, are never touched.
+
+When both a provider Vietnamese track and an AI translation exist, --vi decides
+which one becomes Vietnamese-custom.
 
 Usage:
   bottom-yellow-gen.py <subtitle_path> <lang_code2> [options]
 
 Options:
-  --primary en      Language shown on the first line       (default: en)
-  --secondary vi    Language shown on the second line      (default: vi)
-  --vi WHICH        Which Vietnamese track to pair with when both exist:
+  --langs en,vi     Languages to emit a custom track for   (default: en,vi)
+  --vi WHICH        Which Vietnamese source to restyle:
                     ai | provider | auto                   (default: auto)
   --fontsize N      Override the shared size of 54         (default: 54)
 
-Output (overwritten in place):
-  <video basename>.Dual <PRI>-<SEC>.<primary3>.ass
+Jellyfin reads the ".<title>.<lang>.ass" convention, so the tracks appear named
+"English-custom" and "Vietnamese-custom" beside the originals.
 """
 
 import os
@@ -48,6 +49,9 @@ LANG_ALIASES = {
 }
 LANG3 = {"en": "eng", "vi": "vie", "zh": "zho", "fr": "fra",
          "es": "spa", "de": "deu", "ja": "jpn"}
+# The human-readable half of the output filename, which is what Jellyfin shows.
+LANG_NAME = {"en": "English", "vi": "Vietnamese", "zh": "Chinese", "fr": "French",
+             "es": "Spanish", "de": "German", "ja": "Japanese"}
 
 TIME_RE = re.compile(
     r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})"
@@ -101,33 +105,6 @@ def parse_srt(path):
     return cues
 
 
-def merge(primary, secondary):
-    """
-    Split both timelines on every boundary, then emit one cue per interval that
-    has text. Handles partial overlap, which naive zipping gets wrong — and the
-    Vietnamese tracks here are independently sourced, so their cue boundaries do
-    not line up with the English at all.
-    """
-    bounds = sorted({t for c in primary + secondary for t in (c[0], c[1])})
-    out = []
-    for i in range(len(bounds) - 1):
-        lo, hi = bounds[i], bounds[i + 1]
-        if hi - lo < 40:  # drop slivers below ~1 frame
-            continue
-        mid = (lo + hi) / 2
-        top = [c[2] for c in primary if c[0] <= mid < c[1]]
-        bot = [c[2] for c in secondary if c[0] <= mid < c[1]]
-        if not top and not bot:
-            continue
-        text = "\n".join(["\n".join(top), "\n".join(bot)]).strip("\n")
-        # extend the previous cue instead of emitting a duplicate
-        if out and out[-1][2] == text and out[-1][1] >= lo - 40:
-            out[-1] = (out[-1][0], hi, text)
-        else:
-            out.append((lo, hi, text))
-    return out
-
-
 def ass_time(ms):
     ms = max(0, int(ms))
     h, ms = divmod(ms, 3600000)
@@ -176,44 +153,47 @@ def write_ass(path, cues, fontsize):
 
 
 def stem_of(path):
-    """Strip the trailing .<lang>.srt, and the .AI marker the translator adds."""
+    """Strip the trailing .<lang>.srt, and the .AI marker the translator adds, so
+    every output lands on the video's own basename."""
     base = SUB_SUFFIX_RE.sub("", os.path.basename(path))
     return re.sub(r"\.AI$", "", base, flags=re.I)
 
 
-def find_counterpart(sub_path, want, prefer="auto"):
-    """Find the sibling subtitle for `want`, choosing deliberately between the
-    provider track and the AI translation when both exist.
+def sources_for(sub_path, wanted, prefer="auto"):
+    """Map each wanted language to the .srt that should become its custom track.
 
-    merge-subs.py takes whichever os.listdir happens to yield last, which makes
-    the pairing arbitrary once ai-translate-sub.py has run. Here the choice is
-    explicit and reported.
+    Scans the siblings sharing the video's basename. Where a language has both a
+    provider file and an AI translation, `prefer` decides; "auto" takes the AI
+    one, since it only exists because the title was tagged for it.
     """
     directory = os.path.dirname(sub_path) or "."
-    base = os.path.basename(sub_path)
     stem = stem_of(sub_path)
-    alt = "|".join(re.escape(a) for a in LANG_ALIASES.get(want, {want}))
+    found = {}
 
-    ai, provider = None, None
     for f in sorted(os.listdir(directory)):
-        if not f.lower().endswith(".srt") or f == base or not f.startswith(stem):
+        if not f.lower().endswith(".srt") or not f.startswith(stem):
             continue
+        m = SUB_SUFFIX_RE.search(f)
+        if not m:
+            continue
+        canon = canonical(m.group(1))
+        if canon not in wanted:
+            continue
+        if m.group(4):
+            continue  # hi/sdh/forced/cc variants are never the main track
         tail = f[len(stem):].lower()
-        if not re.search(rf"\.({alt})\b", tail):
-            continue
-        if re.search(r"\.(hi|sdh|forced|cc)\b", tail):
-            continue  # flag variants are never the main track
-        if ".ai." in tail:
-            ai = os.path.join(directory, f)
-        else:
-            provider = os.path.join(directory, f)
+        kind = "ai" if ".ai." in tail else "provider"
+        found.setdefault(canon, {})[kind] = os.path.join(directory, f)
 
-    if prefer == "ai":
-        return ai, "ai"
-    if prefer == "provider":
-        return provider, "provider"
-    # auto: the AI track is the one the user asked for by tagging the title
-    return (ai, "ai") if ai else (provider, "provider")
+    picked = {}
+    for canon, variants in found.items():
+        if prefer in variants:
+            picked[canon] = (variants[prefer], prefer)
+        elif prefer == "auto":
+            kind = "ai" if "ai" in variants else "provider"
+            picked[canon] = (variants[kind], kind)
+        # an explicit --vi=ai with no AI file means: don't guess, skip it
+    return picked
 
 
 def main():
@@ -227,49 +207,37 @@ def main():
         return 2
 
     sub_path, lang = args[0], canonical(args[1])
-    primary = canonical(opts.get("primary", "en"))
-    secondary = canonical(opts.get("secondary", "vi"))
+    wanted = {canonical(c) for c in opts.get("langs", "en,vi").split(",") if c.strip()}
     prefer = opts.get("vi", "auto")
     fontsize = opts.get("fontsize", "54")
 
-    if lang not in (primary, secondary):
+    if lang not in wanted:
         return 0
-    if ".dual " in os.path.basename(sub_path).lower():
-        return 0  # merge-subs.py's output, and now ours too
+    base = os.path.basename(sub_path).lower()
+    if "-custom." in base:
+        return 0  # our own output
+    if ".dual " in base:
+        return 0  # merge-subs.py's output
 
-    # Work from the primary track, whichever side triggered us.
-    if lang == primary:
-        pri_path = sub_path
-        sec_path, which = find_counterpart(sub_path, secondary, prefer)
-    else:
-        sec_path, which = sub_path, "trigger"
-        pri_path, _ = find_counterpart(sub_path, primary)
-
-    if not pri_path or not sec_path:
-        missing = secondary if not sec_path else primary
-        log(f"no {missing} counterpart for {os.path.basename(sub_path)} yet")
+    picked = sources_for(sub_path, wanted, prefer)
+    if not picked:
+        log(f"no source tracks for {os.path.basename(sub_path)}")
         return 0
 
-    # Same path merge-subs.py --layout topbottom writes, so this replaces that
-    # track instead of adding a second one to Jellyfin's subtitle menu.
-    out = (f"{os.path.join(os.path.dirname(pri_path) or '.', stem_of(pri_path))}"
-           f".Dual {primary.upper()}-{secondary.upper()}"
-           f".{LANG3.get(primary, primary)}.ass")
+    for canon in sorted(picked):
+        src, kind = picked[canon]
+        cues = parse_srt(src)
+        if not cues:
+            log(f"{canon}: {os.path.basename(src)} parsed empty, skipping")
+            continue
 
-    pri, sec = parse_srt(pri_path), parse_srt(sec_path)
-    if not pri or not sec:
-        log(f"one side empty ({len(pri)} {primary}, {len(sec)} {secondary}), skipping")
-        return 0
-
-    cues = merge(pri, sec)
-    if not cues:
-        log("merged empty, skipping")
-        return 0
-
-    verb = "replaced" if os.path.exists(out) else "wrote"
-    write_ass(out, cues, fontsize)
-    log(f"{verb} {os.path.basename(out)} — {len(cues)} cues, "
-        f"{secondary} from the {which} track, size {fontsize}")
+        out = (f"{os.path.join(os.path.dirname(src) or '.', stem_of(src))}"
+               f".{LANG_NAME.get(canon, canon.upper())}-custom"
+               f".{LANG3.get(canon, canon)}.ass")
+        verb = "replaced" if os.path.exists(out) else "wrote"
+        write_ass(out, cues, fontsize)
+        log(f"{verb} {os.path.basename(out)} — {len(cues)} cues "
+            f"from the {kind} track, size {fontsize}")
     return 0
 
 
