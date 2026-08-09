@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
-from .models import JobState, LEASEABLE_STATES, SubtitleCue
+from .models import BLOCKING_JOB_STATES, JobState, LEASEABLE_STATES, SubtitleCue
 
 
 SCHEMA_VERSION = 1
@@ -67,6 +67,12 @@ class Database:
                     ON jobs(state, next_attempt_at, created_at);
                 CREATE INDEX IF NOT EXISTS jobs_radarr_movie
                     ON jobs(radarr_movie_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_blocking_per_movie_file
+                    ON jobs(radarr_movie_id, radarr_movie_file_id)
+                    WHERE state IN (
+                      'pending','waiting_resources','running','needs_review',
+                      'retryable_failed','permanent_failed','cancel_requested','completed'
+                    );
 
                 CREATE TABLE IF NOT EXISTS cues (
                     job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -167,6 +173,22 @@ class Database:
                 row = connection.execute(
                     "SELECT id FROM jobs WHERE identity_hash=?", (values["identity_hash"],)
                 ).fetchone()
+                if row is None:
+                    states = tuple(str(state) for state in BLOCKING_JOB_STATES)
+                    placeholders = ",".join("?" for _ in states)
+                    row = connection.execute(
+                        f"""SELECT id FROM jobs
+                            WHERE radarr_movie_id=? AND radarr_movie_file_id=?
+                              AND state IN ({placeholders})
+                            ORDER BY created_at DESC, id DESC LIMIT 1""",
+                        (
+                            values["radarr_movie_id"],
+                            values["radarr_movie_file_id"],
+                            *states,
+                        ),
+                    ).fetchone()
+                if row is None:
+                    raise RuntimeError("job insert was ignored without an existing blocker")
                 job_id = row["id"]
             return job_id, created
 
@@ -179,6 +201,20 @@ class Database:
             return connection.execute(
                 "SELECT * FROM jobs WHERE radarr_movie_id=? ORDER BY created_at DESC LIMIT 1",
                 (movie_id,),
+            ).fetchone()
+
+    def blocking_job_for_movie_file(
+        self, movie_id: int, movie_file_id: int
+    ) -> sqlite3.Row | None:
+        states = tuple(str(state) for state in BLOCKING_JOB_STATES)
+        placeholders = ",".join("?" for _ in states)
+        with self.connect() as connection:
+            return connection.execute(
+                f"""SELECT * FROM jobs
+                    WHERE radarr_movie_id=? AND radarr_movie_file_id=?
+                      AND state IN ({placeholders})
+                    ORDER BY created_at DESC, id DESC LIMIT 1""",
+                (movie_id, movie_file_id, *states),
             ).fetchone()
 
     def list_jobs(self, limit: int = 100) -> list[sqlite3.Row]:

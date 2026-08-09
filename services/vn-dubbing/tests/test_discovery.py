@@ -7,6 +7,7 @@ from pathlib import Path
 from vn_dubbing.config import Profile, Settings
 from vn_dubbing.db import Database
 from vn_dubbing.discovery import discover_once
+from vn_dubbing.models import JobState
 
 
 PROFILE = """
@@ -93,6 +94,78 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(first["created"], 1)
         self.assertEqual(second["existing"], 1)
         self.assertEqual(len(jobs), 1)
+
+    def test_completed_file_requires_explicit_stale_before_new_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            media = root / "media"
+            media.mkdir()
+            video = media / "Film.mkv"
+            subtitle = media / "Film.vi.srt"
+            video.write_bytes(b"not-a-real-video")
+            subtitle.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nXin chào\n", encoding="utf-8"
+            )
+            profile_path = root / "profile.yaml"
+            profile_path.write_text(PROFILE, encoding="utf-8")
+            profile = Profile.load(profile_path)
+            settings = Settings(
+                state_dir=state,
+                media_root=media,
+                profile_path=profile_path,
+                db_path=state / "db.sqlite3",
+                model_cache=state / "cache",
+                jobs_dir=state / "jobs",
+                health_dir=state / "health",
+                published_dir=state / "published",
+                published_link_root=state / "published",
+                radarr_url="http://radarr",
+                radarr_api_key="key",
+                jellyfin_url="http://jellyfin",
+                jellyfin_api_key="",
+                tag="vn-dub",
+                tts_engine="vieneu-v2",
+                scan_interval=3600,
+                supervisor_poll_interval=30,
+                lease_seconds=180,
+                min_media_free_gb=0,
+                stop_publish_free_gb=0,
+                min_work_free_gb=0,
+                min_free_vram_mb=0,
+                require_gpu=False,
+                jellyfin_refresh=False,
+                max_attempts=3,
+                publish_mode="auto",
+            )
+            database = Database(settings.db_path)
+            database.migrate()
+            movie = {
+                "id": 1,
+                "title": "Film",
+                "hasFile": True,
+                "tags": [7],
+                "path": str(media),
+                "movieFile": {"id": 2, "path": str(video)},
+            }
+            client = FakeRadarr(movie)
+            discover_once(settings, profile, database, client)
+            first = database.list_jobs()[0]
+            database.set_job_state(first["id"], JobState.COMPLETED)
+            subtitle.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nNội dung mới\n", encoding="utf-8"
+            )
+
+            blocked = discover_once(settings, profile, database, client)
+            self.assertEqual(blocked["existing"], 1)
+            self.assertEqual(len(database.list_jobs()), 1)
+
+            database.set_job_state(first["id"], JobState.STALE)
+            created = discover_once(settings, profile, database, client)
+            jobs = database.list_jobs()
+
+        self.assertEqual(created["created"], 1)
+        self.assertEqual(len(jobs), 2)
 
 
 if __name__ == "__main__":

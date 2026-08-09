@@ -24,6 +24,20 @@ LEASEABLE_STATES = (
     JobState.RETRYABLE_FAILED,
 )
 
+# At most one of these states may exist for one concrete Radarr movie file.
+# STALE/SUPERSEDED/CANCELLED are intentionally absent so an operator or file
+# replacement can authorize a new immutable job identity.
+BLOCKING_JOB_STATES = (
+    JobState.PENDING,
+    JobState.WAITING_RESOURCES,
+    JobState.RUNNING,
+    JobState.NEEDS_REVIEW,
+    JobState.RETRYABLE_FAILED,
+    JobState.PERMANENT_FAILED,
+    JobState.CANCEL_REQUESTED,
+    JobState.COMPLETED,
+)
+
 
 @dataclass(frozen=True)
 class SubtitleCue:

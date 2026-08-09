@@ -49,6 +49,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(self.database.heartbeat(job_id, "worker-a", 180))
         self.assertFalse(self.database.heartbeat(job_id, "worker-b", 180))
 
+    def test_one_blocking_job_per_movie_file(self) -> None:
+        first_id, _ = self.database.insert_job(job_values("first"))
+        second_id, created = self.database.insert_job(job_values("changed-input"))
+        self.assertFalse(created)
+        self.assertEqual(second_id, first_id)
+        self.assertEqual(len(self.database.list_jobs()), 1)
+
     def test_cue_checkpoint_progress(self) -> None:
         job_id, _ = self.database.insert_job(job_values())
         cues = [SubtitleCue(1, 0, 1000, "Xin chào", "Xin chào")]

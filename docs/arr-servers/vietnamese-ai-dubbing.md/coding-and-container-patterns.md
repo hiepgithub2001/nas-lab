@@ -142,7 +142,7 @@ encoding.
 ├── API keys                          ├── model + revision
 ├── /state and /data/media paths      ├── voice + sampling
 ├── scan/lease intervals              ├── timing/loudness policy
-├── copy/symlink publication mode     └── mix + output codec
+├── auto/copy/symlink publication     └── mix + output codec
 └── disk/VRAM admission limits
 ```
 
@@ -196,6 +196,15 @@ discoveries  latest reason a tagged movie is queued or waiting
 Every completed cue stores the fitted WAV checksum. Resume reuses the file only
 when its state and checksum are valid; otherwise that cue is regenerated.
 
+SQLite also enforces one blocking job per concrete Radarr movie-file ID with a
+partial unique index. Pending, waiting, running, review/failed, cancel-requested,
+and completed jobs all block a second automatic job even when a changed subtitle
+or profile would produce a different identity hash. Repeated hourly scans record
+`already_<state>` and reuse the existing job. Only a new Radarr movie-file ID or
+an explicit transition of the old job to `stale`, `superseded`, or `cancelled`
+opens a slot for another job. This database constraint prevents two schedulers
+from racing around the discovery check.
+
 ### Atomic artifact pattern
 
 Any file that another component may consume follows:
@@ -209,6 +218,12 @@ media-tree sidecar is the verified AAC. In `symlink` mode the verified AAC stays
 under `/state/published`, and the only media-tree write is an atomically replaced
 symlink. Intermediate WAV, manifests, database files, and the model cache stay
 under `/state`.
+
+`auto` is resolved only after the final AAC has been verified. It selects
+`copy` when the media filesystem remains above both the configured preferred
+free-space quota and the publication reserve; otherwise it selects `symlink`.
+The requested and actual modes plus both artifact paths are recorded in the job
+verification JSON.
 
 ### Errors and retry ownership
 
@@ -292,7 +307,7 @@ flowchart LR
     Worker -->|"refresh after publish"| Jellyfin
     Worker <-->|"read/write"| State
     Worker -->|"read + final sidecar write"| Media
-    Worker -->|"symlink mode: write AAC"| Published
+    Worker -->|"symlink or auto fallback: write AAC"| Published
     Published -->|"/vn-dub-published:ro"| Jellyfin
     Worker -->|"read-only"| Profile
     GPU --> Worker

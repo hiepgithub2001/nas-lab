@@ -318,7 +318,7 @@ The implementation adds these placeholders to `.env.example`:
 VN_DUB_TAG=vn-dub
 VN_DUB_ENGINE=vieneu-v2
 VN_DUB_INSTALL_VOXCPM=false
-VN_DUB_PUBLISH_MODE=copy
+VN_DUB_PUBLISH_MODE=auto
 VN_DUB_SCAN_INTERVAL=3600
 VN_DUB_SUPERVISOR_POLL_INTERVAL=30
 VN_DUB_LEASE_SECONDS=180
@@ -335,12 +335,15 @@ JELLYFIN_URL=http://jellyfin:8096
 JELLYFIN_API_KEY=
 ```
 
-`VN_DUB_PUBLISH_MODE=copy` stores the verified AAC directly beside the movie and
-enforces the media-filesystem free-space gates. `symlink` stores it under
-`/state/published` on ext4 and atomically creates only the correctly named link
-beside the movie. The worker and Jellyfin both mount that directory at
-`/vn-dub-published`, so the link resolves identically in both containers. The
-default remains `copy`; changing modes never modifies the source movie.
+`VN_DUB_PUBLISH_MODE=auto` is the default. At final publication time it stores
+the verified AAC directly beside the movie when media free space is at least
+`VN_DUB_MIN_MEDIA_FREE_GB` and the stop-publication reserve can also be
+preserved. If the media filesystem has reached that quota, it stores the AAC
+under `/state/published` on ext4 and atomically creates only the correctly named
+link beside the movie. `copy` and `symlink` force either behavior. The worker and
+Jellyfin both mount the ext4 directory at `/vn-dub-published`, so a fallback link
+resolves identically in both containers. Changing modes never modifies the
+source movie.
 
 Exact synthesis and mix parameters belong in a versioned YAML profile rather
 than scattered environment variables:
@@ -438,6 +441,12 @@ supervisor heartbeat and SQLite access; it must not load the model.
 
 Use SQLite in WAL mode at `/state/dubbing.sqlite3`. Apply schema migrations at
 startup under an exclusive migration lock.
+
+Enforce one blocking job per `(radarr_movie_id, radarr_movie_file_id)` in both
+discovery code and a SQLite partial unique index. Running or completed work must
+not be re-enqueued merely because the hourly scan sees a different subtitle or
+profile hash. A movie-file replacement creates a new media key; regenerating the
+same file requires an explicit operator `mark-stale` followed by discovery.
 
 ### `jobs`
 

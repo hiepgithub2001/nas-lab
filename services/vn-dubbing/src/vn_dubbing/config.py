@@ -108,7 +108,7 @@ class Settings:
             jellyfin_refresh=_env_bool("VN_DUB_JELLYFIN_REFRESH", True),
             max_attempts=_env_int("VN_DUB_MAX_ATTEMPTS", 3, 1),
             publish_mode=_env_choice(
-                "VN_DUB_PUBLISH_MODE", "copy", {"copy", "symlink"}
+                "VN_DUB_PUBLISH_MODE", "auto", {"auto", "copy", "symlink"}
             ),
         )
 

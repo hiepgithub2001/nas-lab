@@ -32,8 +32,9 @@ pipeline records that notice in every job manifest.
 
 ## Activation gates
 
-1. In `copy` mode, reclaim at least 20 GB on `${DATA_ROOT}/media`. In `symlink`
-   mode, verify the ext4-backed link in every important Jellyfin client.
+1. In `auto` mode, verify both regular and ext4-backed sidecars in every
+   important Jellyfin client. Forced `copy` requires at least 20 GB free on
+   `${DATA_ROOT}/media`.
 2. Listen to and approve the smoke sample.
 3. Add a dedicated Radarr API key and Jellyfin API key to the untracked `.env`.
 4. Verify one manually generated external AAC sidecar on each important
@@ -50,10 +51,11 @@ df -h /mnt/f
 Choose the publication mechanism in the untracked `.env`:
 
 ```dotenv
-# Regular AAC stored on the media filesystem (default)
-VN_DUB_PUBLISH_MODE=copy
+# Default: prefer a regular media-side AAC, then fall back to ext4 at quota
+VN_DUB_PUBLISH_MODE=auto
 
-# Or: AAC stored under appdata/vn-dubbing/published on ext4; adjacent symlink
+# Force either mechanism when required
+VN_DUB_PUBLISH_MODE=copy
 VN_DUB_PUBLISH_MODE=symlink
 ```
 
@@ -61,7 +63,9 @@ After flipping the value, recreate the worker and Jellyfin containers so both
 receive the matching `/vn-dub-published` mount. Existing completed outputs are
 not deleted automatically. A new `copy` publication replaces an old link with a
 regular file; a new `symlink` publication replaces an old regular sidecar with a
-link after the ext4 artifact is verified.
+link after the ext4 artifact is verified. In `auto`, this decision is made at
+final publication rather than job admission because available space can change
+during a long synthesis.
 
 ## Build and smoke test
 
@@ -105,9 +109,10 @@ The output is published beside the movie as:
 <video-stem>.Vietnamese AI Voice-over.vi.aac
 ```
 
-In `copy` mode this path is a regular AAC. In `symlink` mode it points to the
-verified AAC under `appdata/vn-dubbing/published`. The source movie is never
-opened for writing.
+In `copy` mode—or `auto` while above quota—this path is a regular AAC. In
+`symlink` mode—or `auto` after media reaches quota—it points to the verified AAC
+under `appdata/vn-dubbing/published`. The source movie is never opened for
+writing.
 
 ## Recovery commands
 
@@ -120,6 +125,11 @@ docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub retry --job <jo
 
 # Stop safely after the current cue checkpoint
 docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub cancel --job <job-id>
+
+# Explicitly authorize a new job for the same movie file, then reconcile
+docker compose --profile vn-dubbing exec vn-dub-scheduler \
+  vn-dub mark-stale --movie-id <radarr-movie-id>
+docker compose --profile vn-dubbing run --rm vn-dub-scheduler discover --once
 
 # Stop automation; checkpointed job files remain
 docker compose --profile vn-dubbing stop vn-dub-scheduler vn-dub-worker

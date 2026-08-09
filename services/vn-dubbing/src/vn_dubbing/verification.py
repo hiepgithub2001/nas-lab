@@ -83,11 +83,19 @@ def publish_sidecar(
     published_dir: Path,
     published_link_root: Path,
     stop_publish_free_gb: int,
-) -> Path:
+    prefer_copy_free_gb: int,
+) -> tuple[str, Path]:
     """Publish a regular sidecar or an adjacent link to an ext4 artifact."""
+    if mode == "auto":
+        free_bytes = shutil.disk_usage(destination.parent).free
+        required_bytes = max(
+            prefer_copy_free_gb * 1024**3,
+            stop_publish_free_gb * 1024**3 + source.stat().st_size,
+        )
+        mode = "copy" if free_bytes >= required_bytes else "symlink"
     if mode == "copy":
         publish_atomic(source, destination, stop_publish_free_gb)
-        return destination
+        return mode, destination
     if mode != "symlink":
         raise PermanentFailure(f"unknown publication mode {mode!r}")
 
@@ -119,7 +127,7 @@ def publish_sidecar(
             os.close(directory_fd)
     finally:
         partial.unlink(missing_ok=True)
-    return artifact
+    return mode, artifact
 
 
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:

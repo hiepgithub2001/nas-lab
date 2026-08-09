@@ -18,7 +18,7 @@ class PublicationTests(unittest.TestCase):
             destination = media / "Film.Vietnamese AI Voice-over.vi.aac"
             published = root / "published"
 
-            artifact = publish_sidecar(
+            mode, artifact = publish_sidecar(
                 source,
                 destination,
                 mode="symlink",
@@ -26,8 +26,10 @@ class PublicationTests(unittest.TestCase):
                 published_dir=published,
                 published_link_root=published,
                 stop_publish_free_gb=0,
+                prefer_copy_free_gb=0,
             )
 
+            self.assertEqual(mode, "symlink")
             self.assertTrue(destination.is_symlink())
             self.assertEqual(destination.read_bytes(), b"audio-on-ext4")
             self.assertEqual(artifact, published / "abc123.aac")
@@ -43,7 +45,7 @@ class PublicationTests(unittest.TestCase):
             destination = root / "Film.vi.aac"
             destination.symlink_to(old)
 
-            artifact = publish_sidecar(
+            mode, artifact = publish_sidecar(
                 source,
                 destination,
                 mode="copy",
@@ -51,10 +53,60 @@ class PublicationTests(unittest.TestCase):
                 published_dir=root / "published",
                 published_link_root=root / "published",
                 stop_publish_free_gb=0,
+                prefer_copy_free_gb=0,
             )
 
+            self.assertEqual(mode, "copy")
             self.assertFalse(destination.is_symlink())
             self.assertEqual(destination.read_bytes(), b"copied-audio")
+            self.assertEqual(artifact, destination)
+
+    def test_auto_falls_back_to_symlink_when_media_is_below_quota(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "work.aac"
+            source.write_bytes(b"fallback-audio")
+            media = root / "media"
+            media.mkdir()
+            destination = media / "Film.vi.aac"
+            published = root / "published"
+
+            mode, artifact = publish_sidecar(
+                source,
+                destination,
+                mode="auto",
+                identity_hash="fallback",
+                published_dir=published,
+                published_link_root=published,
+                stop_publish_free_gb=0,
+                # No test filesystem has a pebibyte free, so fallback is deterministic.
+                prefer_copy_free_gb=1024 * 1024,
+            )
+
+            self.assertEqual(mode, "symlink")
+            self.assertTrue(destination.is_symlink())
+            self.assertEqual(artifact.read_bytes(), b"fallback-audio")
+
+    def test_auto_prefers_copy_when_media_is_above_quota(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "work.aac"
+            source.write_bytes(b"same-storage")
+            destination = root / "Film.vi.aac"
+
+            mode, artifact = publish_sidecar(
+                source,
+                destination,
+                mode="auto",
+                identity_hash="copy",
+                published_dir=root / "published",
+                published_link_root=root / "published",
+                stop_publish_free_gb=0,
+                prefer_copy_free_gb=0,
+            )
+
+            self.assertEqual(mode, "copy")
+            self.assertFalse(destination.is_symlink())
             self.assertEqual(artifact, destination)
 
 

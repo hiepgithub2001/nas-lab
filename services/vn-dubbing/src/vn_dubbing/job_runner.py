@@ -59,6 +59,7 @@ def synthesize_and_fit_with_retries(
     """Regenerate a stochastic outlier and keep the shortest valid take."""
     base = f"{cue['cue_index']:06d}"
     candidates: list[tuple[dict[str, Any], Path, Path]] = []
+    invalid_attempts: list[str] = []
     for attempt in range(1, max_attempts + 1):
         candidate_raw = cue_dir / f"{base}.attempt-{attempt:02d}.raw.wav"
         candidate_fitted = cue_dir / f"{base}.attempt-{attempt:02d}.fitted.wav"
@@ -68,17 +69,36 @@ def synthesize_and_fit_with_retries(
                 candidate_raw,
                 deterministic_seed(job_id, cue["cue_index"] + attempt - 1),
             )
-        fit = fit_cue(
-            candidate_raw,
-            candidate_fitted,
-            cue["end_ms"] - cue["start_ms"],
-            max_tempo,
-            voice_lufs,
-        )
+        try:
+            fit = fit_cue(
+                candidate_raw,
+                candidate_fitted,
+                cue["end_ms"] - cue["start_ms"],
+                max_tempo,
+                voice_lufs,
+            )
+        except PermanentFailure as exc:
+            invalid_attempts.append(str(exc))
+            LOGGER.warning(
+                "cue %s candidate %s/%s is invalid and will be regenerated: %s",
+                cue["cue_index"],
+                attempt,
+                max_attempts,
+                exc,
+            )
+            candidate_raw.unlink(missing_ok=True)
+            candidate_fitted.unlink(missing_ok=True)
+            continue
         candidates.append((fit, candidate_raw, candidate_fitted))
         if fit["warning_code"] is None:
             break
 
+    if not candidates:
+        detail = invalid_attempts[-1] if invalid_attempts else "no audio candidate"
+        raise NeedsReview(
+            f"cue {cue['cue_index']} produced no valid audio after "
+            f"{max_attempts} attempts: {detail}"
+        )
     selected = min(candidates, key=lambda item: item[0]["fitted_duration_ms"])
     fit, selected_raw, selected_fitted = selected
     canonical_raw = cue_dir / f"{base}.raw.wav"
@@ -86,7 +106,7 @@ def synthesize_and_fit_with_retries(
     _copy_atomic(selected_raw, canonical_raw)
     _copy_atomic(selected_fitted, canonical_fitted)
     fit["artifact_sha256"] = sha256_file(canonical_fitted)
-    fit["synthesis_attempts"] = len(candidates)
+    fit["synthesis_attempts"] = len(candidates) + len(invalid_attempts)
     fit["raw_audio_path"] = str(canonical_raw)
     fit["fitted_audio_path"] = str(canonical_fitted)
     for _, raw, fitted in candidates:
@@ -314,9 +334,8 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
             profile.mix,
         )
         verification = verify_output(work_output, movie_probe.duration_ms, profile.output)
-        write_json_atomic(job_dir / "verification.json", verification)
         destination = sidecar_path(video_path)
-        published_artifact = publish_sidecar(
+        publication_mode, published_artifact = publish_sidecar(
             work_output,
             destination,
             mode=settings.publish_mode,
@@ -324,11 +343,19 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
             published_dir=settings.published_dir,
             published_link_root=settings.published_link_root,
             stop_publish_free_gb=settings.stop_publish_free_gb,
+            prefer_copy_free_gb=settings.min_media_free_gb,
         )
-        if settings.publish_mode == "symlink" and not destination.is_symlink():
+        if publication_mode == "symlink" and not destination.is_symlink():
             raise PermanentFailure("symlink publication did not create an adjacent link")
         if sha256_file(destination) != verification["sha256"]:
             raise PermanentFailure("published sidecar checksum differs from verified output")
+        verification["publication"] = {
+            "requested_mode": settings.publish_mode,
+            "actual_mode": publication_mode,
+            "sidecar_path": str(destination),
+            "artifact_path": str(published_artifact),
+        }
+        write_json_atomic(job_dir / "verification.json", verification)
         if video_path.stat().st_size != original_stat.st_size or video_path.stat().st_mtime_ns != original_stat.st_mtime_ns:
             raise PermanentFailure("source movie metadata changed during publication")
         if settings.jellyfin_refresh:
@@ -339,7 +366,7 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
         database.set_job_state(job_id, JobState.COMPLETED, output_path=str(destination))
         LOGGER.info(
             "published %s sidecar %s backed by %s",
-            settings.publish_mode,
+            publication_mode,
             destination,
             published_artifact,
         )

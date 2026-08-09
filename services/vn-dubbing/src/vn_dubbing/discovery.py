@@ -110,6 +110,17 @@ def discover_once(
             settings.tts_engine,
         )
         database.mark_superseded_jobs(movie_id, movie_file_id)
+        blocking = database.blocking_job_for_movie_file(movie_id, movie_file_id)
+        if blocking is not None and blocking["identity_hash"] != identity:
+            state = str(blocking["state"])
+            database.upsert_discovery(
+                movie_id,
+                title,
+                f"already_{state}",
+                f"job={blocking['id']}",
+            )
+            stats["existing"] += 1
+            continue
         _, created = database.insert_job(
             {
                 "identity_hash": identity,
