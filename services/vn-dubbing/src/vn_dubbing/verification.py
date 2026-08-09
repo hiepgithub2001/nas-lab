@@ -74,6 +74,54 @@ def publish_atomic(source: Path, destination: Path, stop_publish_free_gb: int) -
         partial.unlink(missing_ok=True)
 
 
+def publish_sidecar(
+    source: Path,
+    destination: Path,
+    *,
+    mode: str,
+    identity_hash: str,
+    published_dir: Path,
+    published_link_root: Path,
+    stop_publish_free_gb: int,
+) -> Path:
+    """Publish a regular sidecar or an adjacent link to an ext4 artifact."""
+    if mode == "copy":
+        publish_atomic(source, destination, stop_publish_free_gb)
+        return destination
+    if mode != "symlink":
+        raise PermanentFailure(f"unknown publication mode {mode!r}")
+
+    published_dir.mkdir(parents=True, exist_ok=True)
+    artifact = published_dir / f"{identity_hash}.aac"
+    publish_atomic(source, artifact, stop_publish_free_gb)
+    link_target = published_link_root / artifact.name
+    if not link_target.is_file():
+        raise PermanentFailure(
+            f"published link target is not visible inside the worker: {link_target}"
+        )
+    if not os.path.samefile(artifact, link_target):
+        raise PermanentFailure(
+            "VN_DUB_PUBLISHED_DIR and VN_DUB_PUBLISHED_LINK_ROOT do not expose "
+            "the same storage"
+        )
+
+    partial = destination.with_name(destination.name + ".partial-link")
+    try:
+        partial.unlink(missing_ok=True)
+        os.symlink(link_target, partial)
+        if not partial.is_file():
+            raise PermanentFailure(f"publication symlink cannot resolve: {partial}")
+        os.replace(partial, destination)
+        directory_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        partial.unlink(missing_ok=True)
+    return artifact
+
+
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     temporary = path.with_name(path.name + ".partial")
     with temporary.open("w", encoding="utf-8") as handle:

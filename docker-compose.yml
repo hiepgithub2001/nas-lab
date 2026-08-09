@@ -131,6 +131,8 @@ services:
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config
       - ${DATA_ROOT}/media:/data/media
+      # Resolves ext4-backed external-audio symlinks when VN_DUB_PUBLISH_MODE=symlink.
+      - ${CONFIG_ROOT}/vn-dubbing/published:/vn-dub-published:ro
       # WSL2 GPU driver libs, read live from the host. Without this the NVIDIA
       # toolkit copies them in once at creation, and a later Windows driver
       # update leaves the container stale -> "GPU access blocked by the OS".
@@ -220,6 +222,9 @@ services:
       VN_DUB_PROFILE: /app/profiles/voice-over-v1.yaml
       VN_DUB_TAG: ${VN_DUB_TAG:-vn-dub}
       VN_DUB_ENGINE: ${VN_DUB_ENGINE:-vieneu-v2}
+      VN_DUB_PUBLISH_MODE: ${VN_DUB_PUBLISH_MODE:-copy}
+      VN_DUB_PUBLISHED_DIR: /state/published
+      VN_DUB_PUBLISHED_LINK_ROOT: /vn-dub-published
       VN_DUB_SCAN_INTERVAL: ${VN_DUB_SCAN_INTERVAL:-3600}
       VN_DUB_SUPERVISOR_POLL_INTERVAL: ${VN_DUB_SUPERVISOR_POLL_INTERVAL:-30}
       VN_DUB_LEASE_SECONDS: ${VN_DUB_LEASE_SECONDS:-180}
@@ -264,6 +269,7 @@ services:
     volumes:
       - ${CONFIG_ROOT}/vn-dubbing:/state
       - ${DATA_ROOT}/media:/data/media
+      - ${CONFIG_ROOT}/vn-dubbing/published:/vn-dub-published
       - ./services/vn-dubbing/profiles:/app/profiles:ro
       - /usr/lib/wsl:/usr/lib/wsl:ro
     healthcheck:

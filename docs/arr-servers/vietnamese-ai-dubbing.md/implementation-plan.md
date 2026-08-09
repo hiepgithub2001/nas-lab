@@ -155,7 +155,9 @@ longer part of the stack. Port 8298 is free.
 
 Activation is blocked until the following Phase 0 gates pass:
 
-1. reclaim at least 20 GB on `/mnt/f` (only 4.4 GB was free on 2026-08-09);
+1. for `copy` publication, reclaim at least 20 GB on `/mnt/f`; for `symlink`
+   publication, prove that the adjacent link resolves in Jellyfin while the AAC
+   bytes remain on ext4;
 2. listen to and approve the pinned VieNeu model/`Tuyen` preset smoke sample;
 3. verify an external `.vi.aac` track on every Jellyfin client that matters;
 4. approve the Phase 1 result as **AI voice-over**, not true dialogue-replaced
@@ -316,6 +318,7 @@ The implementation adds these placeholders to `.env.example`:
 VN_DUB_TAG=vn-dub
 VN_DUB_ENGINE=vieneu-v2
 VN_DUB_INSTALL_VOXCPM=false
+VN_DUB_PUBLISH_MODE=copy
 VN_DUB_SCAN_INTERVAL=3600
 VN_DUB_SUPERVISOR_POLL_INTERVAL=30
 VN_DUB_LEASE_SECONDS=180
@@ -331,6 +334,13 @@ RADARR_API_KEY=
 JELLYFIN_URL=http://jellyfin:8096
 JELLYFIN_API_KEY=
 ```
+
+`VN_DUB_PUBLISH_MODE=copy` stores the verified AAC directly beside the movie and
+enforces the media-filesystem free-space gates. `symlink` stores it under
+`/state/published` on ext4 and atomically creates only the correctly named link
+beside the movie. The worker and Jellyfin both mount that directory at
+`/vn-dub-published`, so the link resolves identically in both containers. The
+default remains `copy`; changing modes never modifies the source movie.
 
 Exact synthesis and mix parameters belong in a versioned YAML profile rather
 than scattered environment variables:
@@ -792,14 +802,14 @@ acceptable during real Jellyfin activity.
 docker compose --profile vn-dubbing run --rm vn-dub-scheduler discover --once
 
 # Inspect queue and one job
-docker compose --profile vn-dubbing exec vn-dub-scheduler status
-docker compose --profile vn-dubbing exec vn-dub-scheduler status --job <id>
+docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub status
+docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub status --job <id>
 
 # Retry only after inspecting the recorded error
-docker compose --profile vn-dubbing exec vn-dub-scheduler retry --job <id>
+docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub retry --job <id>
 
 # Cooperative stop after the current cue
-docker compose --profile vn-dubbing exec vn-dub-scheduler cancel --job <id>
+docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub cancel --job <id>
 
 # Model/voice proof without a persistent server
 docker compose --profile vn-dubbing run --rm vn-dub-worker \

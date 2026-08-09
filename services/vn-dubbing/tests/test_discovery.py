@@ -57,6 +57,8 @@ class DiscoveryTests(unittest.TestCase):
                 model_cache=state / "cache",
                 jobs_dir=state / "jobs",
                 health_dir=state / "health",
+                published_dir=state / "published",
+                published_link_root=state / "published",
                 radarr_url="http://radarr",
                 radarr_api_key="key",
                 jellyfin_url="http://jellyfin",
@@ -73,6 +75,7 @@ class DiscoveryTests(unittest.TestCase):
                 require_gpu=False,
                 jellyfin_refresh=False,
                 max_attempts=3,
+                publish_mode="copy",
             )
             database = Database(settings.db_path)
             database.migrate()

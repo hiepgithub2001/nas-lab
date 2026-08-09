@@ -19,6 +19,9 @@ class TextNormalizationTests(unittest.TestCase):
     def test_preserves_vietnamese_unicode_and_joins_lines(self) -> None:
         self.assertEqual(normalize_text("Tôi là người\nViệt Nam."), "Tôi là người Việt Nam.")
 
+    def test_converts_ass_line_breaks_in_nominal_srt(self) -> None:
+        self.assertEqual(normalize_text("Một câu.\\N- Hai câu."), "Một câu. Hai câu.")
+
     def test_non_speech_cue_becomes_empty(self) -> None:
         self.assertEqual(normalize_text("♪ [MUSIC]"), "")
 

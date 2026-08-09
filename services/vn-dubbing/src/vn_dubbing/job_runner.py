@@ -29,7 +29,7 @@ from .models import (
 )
 from .subtitles import format_srt, parse_srt
 from .tts import create_backend
-from .verification import publish_atomic, sidecar_path, verify_output, write_json_atomic
+from .verification import publish_sidecar, sidecar_path, verify_output, write_json_atomic
 
 
 LOGGER = logging.getLogger(__name__)
@@ -132,7 +132,10 @@ def preflight(settings: Settings, profile: Profile, job: Any) -> tuple[Path, Pat
         raise PermanentFailure("subtitle changed after this job was discovered")
     if profile.sha256 != job["profile_sha256"]:
         raise PermanentFailure("profile changed after this job was discovered")
-    if _free_gb(video_path.parent) < settings.min_media_free_gb:
+    if (
+        settings.publish_mode == "copy"
+        and _free_gb(video_path.parent) < settings.min_media_free_gb
+    ):
         raise AdmissionDeferred(
             f"media filesystem has {_free_gb(video_path.parent):.1f} GB free; "
             f"requires {settings.min_media_free_gb} GB"
@@ -163,7 +166,9 @@ def _validate_radarr_identity(settings: Settings, job: Any) -> None:
         raise PermanentFailure("Radarr movie path changed after this job was discovered")
 
 
-def _manifest(profile: Profile, job: Any, movie_probe: Any) -> dict[str, Any]:
+def _manifest(
+    settings: Settings, profile: Profile, job: Any, movie_probe: Any
+) -> dict[str, Any]:
     model = profile.model
     return {
         "schema_version": 1,
@@ -182,6 +187,11 @@ def _manifest(profile: Profile, job: Any, movie_probe: Any) -> dict[str, Any]:
         },
         "profile": {"path": str(profile.path), "sha256": profile.sha256, "data": profile.data},
         "engine": job["engine"],
+        "publication": {
+            "mode": settings.publish_mode,
+            "published_dir": str(settings.published_dir),
+            "published_link_root": str(settings.published_link_root),
+        },
         "voice_notice": {
             "voice_id": model["voice_id"],
             "license": model.get("voice_license"),
@@ -206,7 +216,9 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
         video_path, subtitle_path, movie_probe = preflight(settings, profile, job)
         _validate_radarr_identity(settings, job)
         original_stat = video_path.stat()
-        write_json_atomic(job_dir / "manifest.json", _manifest(profile, job, movie_probe))
+        write_json_atomic(
+            job_dir / "manifest.json", _manifest(settings, profile, job, movie_probe)
+        )
 
         cues = parse_srt(
             subtitle_path,
@@ -304,7 +316,19 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
         verification = verify_output(work_output, movie_probe.duration_ms, profile.output)
         write_json_atomic(job_dir / "verification.json", verification)
         destination = sidecar_path(video_path)
-        publish_atomic(work_output, destination, settings.stop_publish_free_gb)
+        published_artifact = publish_sidecar(
+            work_output,
+            destination,
+            mode=settings.publish_mode,
+            identity_hash=job["identity_hash"],
+            published_dir=settings.published_dir,
+            published_link_root=settings.published_link_root,
+            stop_publish_free_gb=settings.stop_publish_free_gb,
+        )
+        if settings.publish_mode == "symlink" and not destination.is_symlink():
+            raise PermanentFailure("symlink publication did not create an adjacent link")
+        if sha256_file(destination) != verification["sha256"]:
+            raise PermanentFailure("published sidecar checksum differs from verified output")
         if video_path.stat().st_size != original_stat.st_size or video_path.stat().st_mtime_ns != original_stat.st_mtime_ns:
             raise PermanentFailure("source movie metadata changed during publication")
         if settings.jellyfin_refresh:
@@ -313,6 +337,12 @@ def run_job(settings: Settings, profile: Profile, database: Database, job_id: st
             else:
                 JellyfinClient(settings.jellyfin_url, settings.jellyfin_api_key).refresh_library()
         database.set_job_state(job_id, JobState.COMPLETED, output_path=str(destination))
+        LOGGER.info(
+            "published %s sidecar %s backed by %s",
+            settings.publish_mode,
+            destination,
+            published_artifact,
+        )
         return destination
     finally:
         if backend is not None:

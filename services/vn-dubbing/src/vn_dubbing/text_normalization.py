@@ -20,7 +20,10 @@ SPACE_RE = re.compile(r"[ \t]{2,}")
 
 def normalize_text(text: str, allow_emotion_tags: bool = False) -> str:
     """Return only neutral, speakable text from one subtitle cue."""
-    output = MARKUP_RE.sub("", text)
+    # Some nominal SRT files retain ASS hard-line-break escapes. They are
+    # formatting, not characters the model should try to pronounce.
+    output = text.replace("\\N", "\n").replace("\\n", "\n").replace("\\h", " ")
+    output = MARKUP_RE.sub("", output)
     if not allow_emotion_tags:
         for pattern in TAG_PATTERNS:
             output = pattern.sub(" ", output)

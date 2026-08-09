@@ -34,6 +34,14 @@ def _env_int(name: str, default: int, minimum: int = 0) -> int:
     return value
 
 
+def _env_choice(name: str, default: str, choices: set[str]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    if value not in choices:
+        expected = ", ".join(sorted(choices))
+        raise ConfigurationError(f"{name} must be one of: {expected}")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     state_dir: Path
@@ -43,6 +51,8 @@ class Settings:
     model_cache: Path
     jobs_dir: Path
     health_dir: Path
+    published_dir: Path
+    published_link_root: Path
     radarr_url: str
     radarr_api_key: str
     jellyfin_url: str
@@ -59,6 +69,7 @@ class Settings:
     require_gpu: bool
     jellyfin_refresh: bool
     max_attempts: int
+    publish_mode: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -74,6 +85,12 @@ class Settings:
             model_cache=state_dir / "model-cache",
             jobs_dir=state_dir / "jobs",
             health_dir=state_dir / "health",
+            published_dir=Path(
+                os.getenv("VN_DUB_PUBLISHED_DIR", str(state_dir / "published"))
+            ).resolve(),
+            published_link_root=Path(
+                os.getenv("VN_DUB_PUBLISHED_LINK_ROOT", "/vn-dub-published")
+            ),
             radarr_url=os.getenv("RADARR_URL", "http://radarr:7878").rstrip("/"),
             radarr_api_key=os.getenv("RADARR_API_KEY", "").strip(),
             jellyfin_url=os.getenv("JELLYFIN_URL", "http://jellyfin:8096").rstrip("/"),
@@ -90,10 +107,19 @@ class Settings:
             require_gpu=_env_bool("VN_DUB_REQUIRE_GPU", True),
             jellyfin_refresh=_env_bool("VN_DUB_JELLYFIN_REFRESH", True),
             max_attempts=_env_int("VN_DUB_MAX_ATTEMPTS", 3, 1),
+            publish_mode=_env_choice(
+                "VN_DUB_PUBLISH_MODE", "copy", {"copy", "symlink"}
+            ),
         )
 
     def ensure_state_dirs(self) -> None:
-        for path in (self.state_dir, self.model_cache, self.jobs_dir, self.health_dir):
+        for path in (
+            self.state_dir,
+            self.model_cache,
+            self.jobs_dir,
+            self.health_dir,
+            self.published_dir,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
     def require_radarr(self) -> None:

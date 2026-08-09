@@ -93,11 +93,17 @@ def fit_cue(
 ) -> dict[str, Any]:
     ffmpeg = require_executable("ffmpeg")
     normalized = fitted_path.with_suffix(".normalized.wav")
+    # Trim only the leading and trailing edges. A positive stop_periods value
+    # ends output at the first internal pause, which truncates natural speech.
+    # Reversing the stream lets the start-only form trim the other edge while
+    # preserving every pause between words and sentences.
+    edge_trim = (
+        "silenceremove=start_periods=1:start_silence=0.02:start_threshold=-50dB"
+    )
     common_filter = (
-        "silenceremove=start_periods=1:start_silence=0.02:start_threshold=-50dB:"
-        "stop_periods=1:stop_silence=0.02:stop_threshold=-50dB,"
-        f"loudnorm=I={voice_lufs}:TP=-2:LRA=7,"
+        f"{edge_trim},areverse,{edge_trim},areverse,"
         "acompressor=threshold=0.125:ratio=2:attack=20:release=150,"
+        f"loudnorm=I={voice_lufs}:TP=-2:LRA=7,"
         "aresample=48000,aformat=sample_fmts=s16:channel_layouts=mono,"
         "afade=t=in:d=0.015,areverse,afade=t=in:d=0.020,areverse"
     )

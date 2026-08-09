@@ -41,7 +41,7 @@ docker compose --profile vn-dubbing build vn-dub-worker
 docker compose --profile vn-dubbing run --rm vn-dub-worker \
   smoke-test --text "Xin chào Việt Nam" --output /state/smoke.wav
 docker compose --profile vn-dubbing up -d vn-dub-scheduler vn-dub-worker
-docker compose --profile vn-dubbing exec vn-dub-scheduler status
+docker compose --profile vn-dubbing exec vn-dub-scheduler vn-dub status
 ```
 
 Do not enable the scheduler before the smoke test and Jellyfin-client sidecar

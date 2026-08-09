@@ -22,6 +22,28 @@ from vn_dubbing.verification import verify_output
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg is unavailable")
 class FfmpegIntegrationTests(unittest.TestCase):
+    def test_fit_preserves_internal_speech_pause(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "speech-with-pause.wav"
+            tone = [
+                round(5000 * math.sin(2 * math.pi * 440 * index / 24000))
+                for index in range(24000)
+            ]
+            samples = array.array("h", tone + [0] * 12000 + tone)
+            with wave.open(str(raw), "wb") as target:
+                target.setnchannels(1)
+                target.setsampwidth(2)
+                target.setframerate(24000)
+                target.writeframes(samples.tobytes())
+
+            fitted = root / "fitted.wav"
+            result = fit_cue(raw, fitted, 3000, 1.35, -18)
+
+        self.assertGreater(result["fitted_duration_ms"], 2400)
+        self.assertLess(result["fitted_duration_ms"], 2600)
+        self.assertIsNone(result["warning_code"])
+
     def test_short_voice_over_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

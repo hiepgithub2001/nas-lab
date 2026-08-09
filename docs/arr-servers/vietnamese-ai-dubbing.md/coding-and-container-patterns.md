@@ -142,7 +142,8 @@ encoding.
 ├── API keys                          ├── model + revision
 ├── /state and /data/media paths      ├── voice + sampling
 ├── scan/lease intervals              ├── timing/loudness policy
-└── disk/VRAM admission limits        └── mix + output codec
+├── copy/symlink publication mode     └── mix + output codec
+└── disk/VRAM admission limits
 ```
 
 Changing the YAML bytes changes its SHA-256 and therefore the job identity.
@@ -203,9 +204,11 @@ Any file that another component may consume follows:
 write <name>.partial -> close producing process -> validate -> os.replace
 ```
 
-The source movie is always read-only from application code. The only media-tree
-write is the final AAC sidecar, published after verification. Intermediate WAV,
-manifests, database files, and the model cache stay under `/state`.
+The source movie is always read-only from application code. In `copy` mode the
+media-tree sidecar is the verified AAC. In `symlink` mode the verified AAC stays
+under `/state/published`, and the only media-tree write is an atomically replaced
+symlink. Intermediate WAV, manifests, database files, and the model cache stay
+under `/state`.
 
 ### Errors and retry ownership
 
@@ -277,6 +280,7 @@ flowchart LR
     State["${CONFIG_ROOT}/vn-dubbing<br/>/state<br/>SQLite + jobs + cache + health"]
     Profile["./services/vn-dubbing/profiles<br/>/app/profiles:ro"]
     Media["${DATA_ROOT}/media<br/>/data/media"]
+    Published["${CONFIG_ROOT}/vn-dubbing/published<br/>ext4 AAC storage"]
     GPU["NVIDIA runtime + /usr/lib/wsl:ro"]
 
     Scheduler -->|"HTTP read"| Radarr
@@ -288,6 +292,8 @@ flowchart LR
     Worker -->|"refresh after publish"| Jellyfin
     Worker <-->|"read/write"| State
     Worker -->|"read + final sidecar write"| Media
+    Worker -->|"symlink mode: write AAC"| Published
+    Published -->|"/vn-dub-published:ro"| Jellyfin
     Worker -->|"read-only"| Profile
     GPU --> Worker
 ```
@@ -301,6 +307,7 @@ same profile, and the same `/state`. Their differences are intentional:
 | GPU | None | NVIDIA reservation and WSL driver libraries |
 | Media mount | Read-only | Read-write for final sidecar only |
 | State mount | Read-write | Read-write |
+| Published AAC mount | None | Read-write; Jellyfin receives it read-only |
 | Model loaded | Never | Only in per-movie child |
 | Health age | Slightly longer than scan interval | Three minutes |
 
@@ -323,13 +330,14 @@ ${CONFIG_ROOT}/vn-dubbing/             <->   /state
 ├── dubbing.sqlite3-wal                       active WAL
 ├── model-cache/                              pinned model snapshots
 ├── jobs/<job-id>/                            manifests and cue artifacts
-└── health/                                   scheduler/supervisor heartbeats
+├── health/                                   scheduler/supervisor heartbeats
+└── published/<identity-hash>.aac             symlink-mode verified AAC
 
 ${DATA_ROOT}/media/                     <->   /data/media
 ├── movies/.../Film.mkv                       never modified
 ├── movies/.../Film.vi.srt                    read as input
 └── movies/.../Film.Vietnamese AI Voice-over.vi.aac
-                                                verified atomic publication
+                                                regular AAC or adjacent symlink
 ```
 
 Compose runs both containers as `${PUID}:${PGID}`. That identity must be able to
