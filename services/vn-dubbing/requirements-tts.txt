@@ -1,0 +1,6 @@
+# VieNeu v2 standard/PyTorch backend. Versions are explicit so a rebuilt worker
+# cannot silently move to a different inference implementation.
+vieneu==3.2.4
+torch==2.8.0
+torchaudio==2.8.0
+transformers==4.57.6

@@ -1,0 +1,3 @@
+# Cold-backup engine. The default image does not install this file; enable the
+# Docker build argument only after the reference-voice Phase 0 gate passes.
+voxcpm==2.0.3

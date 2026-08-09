@@ -1,0 +1,50 @@
+profile_version: 1
+model:
+  engine: vieneu-v2
+  repository: pnnbao-ump/VieNeu-TTS-v2
+  revision: b62b1cbddec67cb1d26ac602965d39f0a7faddf2
+  codec_repository: neuphonic/neucodec-onnx-decoder-int8
+  codec_revision: 706f4bd5fcc39b039c333d5407f58b0075dcee07
+  voice_name: Tuyên
+  voice_id: Tuyen
+  voice_license: CC BY-NC 4.0
+  voice_attribution: pnnbao-ump
+  emotion: natural
+  # Values below 0.6 caused intermittent runaway output. Keep the upstream
+  # sampler default and enforce consistency with retries plus duration QA.
+  temperature: 1.0
+  top_k: 50
+  backend: cuda
+fallback_model:
+  enabled: false
+  engine: voxcpm2
+  repository: openbmb/VoxCPM2
+  revision: bffb3df5a29440629464e5e839f4d214c8714c3d
+  mode: ultimate_clone
+  reference_audio: null
+  reference_transcript: null
+  reference_sha256: null
+  seed: 42
+  # cfg did not improve measured consistency; keep the upstream default.
+  cfg_value: 2.0
+  inference_timesteps: 10
+speech:
+  tone_policy: neutral_steady
+  allow_emotion_tags: false
+  max_tempo: 1.35
+  max_synthesis_attempts: 4
+  voice_lufs: -18
+mix:
+  mode: voice_over
+  duck_db: -14
+  activity_padding_before_ms: 120
+  activity_padding_after_ms: 250
+  merge_activity_gap_ms: 300
+  attack_ms: 80
+  release_ms: 300
+  true_peak_limit: 0.891251
+output:
+  codec: aac
+  sample_rate: 48000
+  bitrate: 160k
+  channels: 2
