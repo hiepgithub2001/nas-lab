@@ -110,7 +110,7 @@ Edit `.env`:
 
 | Variable | Meaning |
 |---|---|
-| `DATA_ROOT` | Where media lives (e.g. `/mnt/f/film-data`) |
+| `DATA_ROOT` | Where media lives (e.g. `/mnt/hdd/film-data` on the NAS) |
 | `PUID` / `PGID` | Your user/group — check with `id -u` and `id -g` |
 | `TZ` | e.g. `Asia/Bangkok` |
 

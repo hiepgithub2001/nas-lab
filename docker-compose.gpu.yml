@@ -35,7 +35,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
-    restart: unless-stopped
+    restart: "no"
     logging: *default-logging
     environment:
       - TZ=${TZ}
@@ -86,7 +86,7 @@ services:
         INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
     container_name: vn-dub-scheduler
     user: "${PUID}:${PGID}"
-    restart: unless-stopped
+    restart: "no"
     logging: *default-logging
     command: ["scheduler", "--interval", "${VN_DUB_SCAN_INTERVAL:-3600}"]
     environment: &vn-dub-environment
@@ -134,7 +134,7 @@ services:
         INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
     container_name: vn-dub-worker
     user: "${PUID}:${PGID}"
-    restart: unless-stopped
+    restart: "no"
     logging: *default-logging
     command: ["supervisor"]
     environment:

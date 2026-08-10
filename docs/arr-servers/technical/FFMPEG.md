@@ -164,7 +164,7 @@ Reading the output:
 | `codec_name=opus` | Poor client support → at minimum an audio transcode |
 | `codec_name=hdmv_pgs_subtitle` | Bitmap subs — burning them in forces a **full video** transcode |
 
-Paths are the *container's* view: `/data/media/...`, not `/mnt/f/film-data/media/...`.
+Paths are the *container's* view: `/data/media/...`, not `/mnt/hdd/film-data/media/...`.
 
 ## Testing FFmpeg directly
 
@@ -206,9 +206,14 @@ docker exec jellyfin /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -filters | gre
 ## Transcode scratch space
 
 In-progress HLS segments are written to `/config/cache/transcodes` inside the container
-— `appdata/jellyfin/cache/transcodes` on the host, which sits on **native ext4**, not
-the `/mnt/f` Windows mount. That is the right place for it: transcoding writes many
-small files quickly, and the 9p mount has far higher per-operation latency.
+— `appdata/jellyfin/cache/transcodes` on the host, which since the 2026-08-10 move to
+the NAS sits on the **SSD** (`/mnt/ssd`), separate from the library on the HDD
+(`/mnt/hdd`). That is the right place for it: transcoding writes many small files
+quickly, so it wants the faster, lower-latency volume.
+
+(Before the move this said "not the `/mnt/f` Windows mount", because the old host
+reached the library over 9p, which had far higher per-operation latency. The reasoning
+is the same; only the volumes changed.)
 
 Two related settings are currently **off** in `appdata/jellyfin/encoding.xml`, despite
 having their timing values configured:

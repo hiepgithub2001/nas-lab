@@ -1,3 +1,11 @@
+> **STALE SINCE 2026-08-10 — read with care.** These documents were written when
+> the media stack and the GPU shared one host. The stack now runs on the NAS
+> (`/mnt/hdd/film-data`, `/mnt/ssd` for appdata) while Ollama and the dubbing
+> worker stay on the PC. Every `/mnt/f` reference, every free-space threshold, and
+> the assumption that the worker can reach the library on local disk no longer
+> hold. See the header of `docker-compose.gpu.yml` for the cross-host wiring that
+> is still outstanding.
+
 # Vietnamese AI dubbing pipeline
 
 Design for turning a movie's Vietnamese subtitle into a selectable Vietnamese

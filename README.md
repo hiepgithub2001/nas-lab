@@ -35,12 +35,75 @@ there. The rest of this README is the detailed reference behind those steps.
    files alongside it.
 6. **Jellyfin** serves the organized `/data/media` library for playback.
 
+## Two stacks, two machines
+
+Since 2026-08-10 this repo drives two hosts from one checkout, which lives on the
+NAS at `/mnt/ssd/nas-lab` (reachable from the PC at `/mnt/nas-ssd/nas-lab` over
+NFS). Edit it in one place; both stacks read the same files.
+
+| | `docker-compose.yml` | `docker-compose.gpu.yml` |
+|---|---|---|
+| Runs on | **NAS** (`ubuntu-2404`) | **PC** (WSL, RTX 4080 Super) |
+| Services | jellyfin, radarr, sonarr, prowlarr, bazarr, qbittorrent, recyclarr, beszel | ollama, open-webui, vn-dub-\* |
+| Power state | always on | on only when needed |
+| Restart policy | `unless-stopped` | **`"no"` — manual** |
+
+The GPU services are the only ones that need CUDA: `qwen3:8b` runs at 101 tok/s on
+the 4080 versus roughly 5-10 tok/s on CPU, and VoxCPM2 will not start without it.
+They are set `restart: "no"` deliberately, so a Docker or WSL restart does **not**
+bring them back — the GPU is a shared, contended resource and they should only be
+holding VRAM when you are actually using them.
+
+### Starting the GPU services
+
+Always run these from the shared checkout, never from a local copy:
+
+```bash
+cd /mnt/nas-ssd/nas-lab            # on the PC; the NFS-mounted repo
+
+# LLM only — subtitle translation, Open WebUI chat
+docker compose -f docker-compose.gpu.yml up -d ollama open-webui
+
+# Vietnamese dubbing — scheduler + worker (behind an opt-in profile)
+docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d
+
+# everything GPU-side at once
+docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d ollama open-webui vn-dub-scheduler vn-dub-worker
+```
+
+### Stopping them
+
+```bash
+docker stop ollama open-webui vn-dub-scheduler vn-dub-worker
+```
+
+`stop` rather than `down`: `down` also removes the compose network, and the
+containers carry no state outside their `appdata` volumes, so stopping is enough.
+Check the GPU actually came back with `nvidia-smi` — idle should be ~2.7 GB, all of
+it Windows.
+
+### Checking what is running
+
+```bash
+docker ps --format '{{.Names}}\t{{.Status}}'
+nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
+```
+
+> **The vn-dub services are not wired for cross-host operation yet.** They mount a
+> media root and call Radarr/Jellyfin by compose service name, both of which assumed
+> everything ran on one box. See the header of `docker-compose.gpu.yml` for what
+> still needs pointing at the NAS.
+
 ## Folder structure
 
-Everything lives under one root so hardlinks work across containers:
+Everything lives under one root so hardlinks work across containers. That single
+root is the whole point: hardlinks cannot cross a filesystem boundary, so mounting
+`media/` and `torrents/` separately would silently turn every import into a full
+copy and double the disk used. The *arr apps and qBittorrent therefore get all of
+`/data`; Jellyfin only needs `media/`.
 
 ```
-/mnt/f/film-data          → mounted as /data in each container
+/mnt/hdd/film-data        → mounted as /data in each container (NAS)
 ├── media/                → the organized library (Jellyfin reads this)
 │   ├── movies/           → Radarr root folder
 │   └── tv/               → Sonarr root folder

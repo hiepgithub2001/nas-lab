@@ -18,7 +18,7 @@ deliberately minimal: a handful of legible charts rather than a chart tree.
 |---|---|
 | Host CPU, memory, network, load | agent with `network_mode: host` |
 | Root disk | `sdd` (the WSL ext4 VHDX) |
-| **Media drive** `/mnt/f` | bind-mounted to `/extra-filesystems/mnt-f:ro` |
+| **Media drive** `/mnt/hdd` | bind-mounted to `/extra-filesystems/mnt-hdd:ro` |
 | All containers, individually | `/var/run/docker.sock:ro` |
 | GPU | `henrygd/beszel-agent-nvidia` + nvidia `utility` reservation, `/usr/lib/wsl` |
 
@@ -53,7 +53,7 @@ The agent authenticates the hub with the hub's own SSH key, carried in `.env` as
 Configured per-system in the UI, with thresholds on CPU, memory, disk, bandwidth,
 temperature, load average and status. Notifications go out by email or webhook.
 
-**Set the disk alert first.** `/mnt/f` sits at 99%, and it is the failure mode
+**Set the disk alert first.** `/mnt/hdd` holds the library, and it is the failure mode
 that actually breaks this stack — downloads and imports fail while every service
 keeps answering normally.
 
@@ -155,7 +155,7 @@ Without opening anything:
 for p in 8096 7878 8989 9696 6767 8080 8191; do
   printf "%s -> %s\n" "$p" "$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://localhost:$p/)"
 done
-df -h /mnt/f /
+df -h /mnt/hdd /mnt/ssd
 systemctl is-active tailscaled docker
 ```
 

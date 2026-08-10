@@ -142,10 +142,10 @@ container gets a DNS name equal to its service name (`radarr`, `sonarr`,
 ## Storage model: why hardlinks instead of copies
 
 All of Radarr, Sonarr, and qBittorrent mount the **same host directory**
-(`DATA_ROOT`, e.g. `/mnt/f/film-data`) at `/data` inside each container:
+(`DATA_ROOT`, e.g. `/mnt/hdd/film-data`) at `/data` inside each container:
 
 ```
-/mnt/f/film-data          (host)
+/mnt/hdd/film-data        (host: NAS)
 ├── media/
 │   ├── movies/
 │   └── tv/

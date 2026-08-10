@@ -140,10 +140,17 @@ simplest arrangement: `tailscale0` and the container ports live in one network
 namespace, so anything bound to `0.0.0.0` is immediately reachable on the tailnet
 address with no forwarding of any kind.
 
-(The alternative — the Tailscale client on Windows — also works here, because this
-WSL instance runs `networkingMode=mirrored` and therefore shares the Windows network
-interfaces rather than sitting behind its own NAT. Without mirrored mode that route
-would need `netsh portproxy` forwarding.)
+(The alternative — the Tailscale client on Windows — would need `netsh portproxy`
+forwarding here. This WSL instance ran `networkingMode=mirrored` until 2026-08-10,
+sharing the Windows interfaces, which made that route work without forwarding. It is
+now `NAT`, so WSL sits behind its own address and only the in-WSL Tailscale route
+below is forwarding-free. See the note in `.wslconfig` for why the mode changed.)
+
+That switch cost WSL its LAN address: services here are no longer reachable at
+`192.168.31.180`. Nothing else broke, because Tailscale runs inside WSL and still
+takes the direct LAN path — verified 2026-08-10, the NAS reaching Ollama on
+`http://100.69.57.57:11434` in 1 ms. If a device that cannot join the tailnet ever
+needs one of these ports, that is the case that needs `netsh portproxy`.
 
 ## Setup
 

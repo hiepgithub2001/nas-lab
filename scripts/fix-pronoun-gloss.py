@@ -19,13 +19,13 @@ Usage:
   fix-pronoun-gloss.py [PATH ...] [--dry-run]
 
 PATH may be a file or a directory (searched recursively for *.AI.vi.srt).
-Defaults to /mnt/f/film-data/media.
+Defaults to /mnt/hdd/film-data/media (NAS).
 """
 import re
 import sys
 from pathlib import Path
 
-DEFAULT_ROOT = Path("/mnt/f/film-data/media")
+DEFAULT_ROOT = Path("/mnt/hdd/film-data/media")
 PATTERN = "*.AI.vi.srt"
 
 # The gloss only ever follows its own English word, so anchoring on the pair is

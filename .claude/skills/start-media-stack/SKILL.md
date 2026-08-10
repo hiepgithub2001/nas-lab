@@ -140,7 +140,7 @@ Give the user a short summary:
   (`http://admin-pc-1.tail9dbb76.ts.net:8096`)
 - GPU: available to Jellyfin or not
 - Local Jellyfin URL: `http://localhost:8096`
-- Disk headroom (`df -h /mnt/f /`) — flag it if the media drive is above 95%,
+- Disk headroom (`df -h /mnt/hdd /mnt/ssd`) — flag it if the media drive is above 95%,
   since a full drive breaks downloads and imports before it breaks a health check
 
 Keep it to the essentials — a green "all up" line plus anything that needed attention.
