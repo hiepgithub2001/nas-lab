@@ -60,15 +60,35 @@ Always run these from the shared checkout, never from a local copy:
 
 ```bash
 cd /mnt/nas-ssd/nas-lab            # on the PC; the NFS-mounted repo
+```
 
-# LLM only — subtitle translation, Open WebUI chat
-docker compose -f docker-compose.gpu.yml up -d ollama open-webui
+**Everything — ollama + vn-dub together.** This is the one you usually want:
 
-# Vietnamese dubbing — scheduler + worker (behind an opt-in profile)
+```bash
 docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d
+```
 
-# everything GPU-side at once
-docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d ollama open-webui vn-dub-scheduler vn-dub-worker
+Starts all five: `ollama`, `open-webui`, `vn-dub-scheduler`, `vn-dub-worker`,
+`beszel-agent`. The `--profile` flag *adds* the dubbing services to the default set
+rather than selecting only them — so this is the whole GPU stack, not just dubbing.
+
+**LLM only** — subtitle translation and the chat UI, no dubbing:
+
+```bash
+docker compose -f docker-compose.gpu.yml up -d ollama open-webui
+```
+
+**Dubbing only**, when Ollama is already running:
+
+```bash
+docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d vn-dub-scheduler vn-dub-worker
+```
+
+Confirm what came up, and that the GPU is being shared sensibly:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Status}}'
+nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
 ```
 
 ### Stopping them
@@ -127,18 +147,41 @@ Prerequisites, `.env`, folder creation and `docker compose up -d` are in the
 [Quickstart](docs/QUICKSTART.md#b-from-a-fresh-clone). What follows is the per-app
 configuration in detail — do it in this order, since each step depends on the last.
 
-| Service | URL | Purpose |
+### Where each service runs, and how to reach it
+
+`localhost` is no longer the answer for most of these. Since 2026-08-10 the *arr
+apps live on the **NAS**, so `localhost` on the PC reaches nothing — substitute the
+NAS address. The ports are unchanged, so it is purely a hostname swap.
+
+**On the NAS** (`ubuntu-2404`, always on) — LAN `192.168.31.7`, tailnet `ubuntu-2404`:
+
+| Service | LAN | Purpose |
 |---|---|---|
-| Prowlarr | http://localhost:9696 | Indexer manager |
-| Radarr | http://localhost:7878 | Movie automation |
-| Sonarr | http://localhost:8989 | TV automation |
-| Bazarr | http://localhost:6767 | Subtitle automation |
-| qBittorrent | http://localhost:8080 | Download client |
-| FlareSolverr | http://localhost:8191 | Cloudflare-challenge solver for indexers |
-| Jellyfin | http://localhost:8096 | Media playback |
+| Prowlarr | http://192.168.31.7:9696 | Indexer manager |
+| Radarr | http://192.168.31.7:7878 | Movie automation |
+| Sonarr | http://192.168.31.7:8989 | TV automation |
+| Bazarr | http://192.168.31.7:6767 | Subtitle automation |
+| qBittorrent | http://192.168.31.7:8080 | Download client |
+| FlareSolverr | http://192.168.31.7:8191 | Cloudflare-challenge solver for indexers |
+| Jellyfin | http://192.168.31.7:8096 | Media playback |
+| Beszel | http://192.168.31.7:8091 | Host + container health ([Monitoring](docs/arr-servers/technical/MONITORING.md)) |
 | Recyclarr | CLI only | Syncs TRaSH quality profiles / custom formats |
-| Beszel | http://localhost:8091 | Host + container health, alerting ([Monitoring](docs/technical/MONITORING.md)) |
-| Ollama | http://localhost:11434 | Local LLM for subtitle translation ([LLM subtitles](docs/technical/LLM-SUBTITLES.md)) |
+
+**On the PC** (WSL + RTX 4080 Super, started by hand) — `localhost` still works here:
+
+| Service | Local | Purpose |
+|---|---|---|
+| Ollama | http://localhost:11434 | Local LLM for subtitle translation ([LLM subtitles](docs/arr-servers/LLM-SUBTITLES.md)) |
+| Open WebUI | http://localhost:3000 | Chat UI for the Ollama server |
+
+> **Prefer the tailnet name over the IP.** `http://ubuntu-2404:8096` resolves via
+> Tailscale MagicDNS and works both at home and away, where `192.168.31.7` only
+> works on the LAN and can change if the DHCP lease does. Same for the PC:
+> `100.69.57.57` reaches Ollama from any tailnet device, which matters because WSL
+> runs `networkingMode=NAT` and no longer has a LAN address of its own.
+
+Everything below says `localhost:<port>` for brevity. On the NAS services, read that
+as `192.168.31.7:<port>` or `ubuntu-2404:<port>`.
 
 ### 1. Configure qBittorrent
 
@@ -383,10 +426,14 @@ Four things explain most of the setup decisions above. Each is covered in depth 
 **[docs/technical/ARCHITECTURE.md](docs/technical/ARCHITECTURE.md)**, which also has component and
 request-lifecycle diagrams.
 
-- **`localhost` vs container names** — containers reach each other by service name
-  (`http://radarr:7878`); inside a container `localhost` means only itself. Your
-  browser, being outside Docker, uses `http://localhost:7878`. This is the #1 source
-  of "can't connect" mistakes when wiring the apps together.
+- **`localhost` vs container names** — containers on the same host reach each other by
+  service name (`http://radarr:7878`); inside a container `localhost` means only
+  itself. Your browser, being outside Docker, uses the host's address —
+  `http://192.168.31.7:7878` for anything on the NAS. This is the #1 source of
+  "can't connect" mistakes when wiring the apps together.
+  Since the 2026-08-10 split there is a second version of the same trap: service
+  names only resolve *within one compose project on one host*. The dubbing worker on
+  the PC cannot reach `http://radarr:7878` at all — it needs the NAS's real address.
   → [Networking model](docs/technical/ARCHITECTURE.md#networking-model)
 - **One shared `/data` root** — lets Radarr/Sonarr *hardlink* finished downloads into
   the library instead of copying: instant, zero extra disk space, and qBittorrent
