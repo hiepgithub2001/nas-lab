@@ -125,166 +125,20 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      # NVIDIA GPU (RTX 4080 Super) for NVENC hardware transcoding
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
+    # Intel Iris Xe (Raptor Lake-P) via QSV, replacing the RTX 4080's NVENC on
+    # 2026-08-10. The render node is root:render, and render is GID 993 on this
+    # host — without group_add the container opens /dev/dri and gets EACCES, then
+    # silently falls back to software transcoding.
+    # The LSIO image ships its own Intel media driver, so the host needs none.
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "993"
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config
       - ${DATA_ROOT}/media:/data/media
-      # Resolves ext4-backed audio when symlink mode is selected or auto falls back.
-      - ${CONFIG_ROOT}/vn-dubbing/published:/vn-dub-published:ro
-      # WSL2 GPU driver libs, read live from the host. Without this the NVIDIA
-      # toolkit copies them in once at creation, and a later Windows driver
-      # update leaves the container stale -> "GPU access blocked by the OS".
-      - /usr/lib/wsl:/usr/lib/wsl:ro
     ports:
       - 8096:8096
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # --- LLM ----------------------------------------------------------------
-  # Local model server, used for English -> Vietnamese subtitle translation.
-  # See docs/technical/LLM-SUBTITLES.md.
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      - TZ=${TZ}
-      # Unload the model once idle. Jellyfin's NVENC transcodes and this share
-      # the same 16 GB of VRAM, and a loaded model squatting on ~5-9 GB is how
-      # a 4K HDR transcode ends up failing.
-      - OLLAMA_KEEP_ALIVE=5m
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    volumes:
-      # Models go on the ext4 root (~900 GB free), never /mnt/f (12 GB, 9p).
-      - ${CONFIG_ROOT}/ollama:/root/.ollama
-      - /usr/lib/wsl:/usr/lib/wsl:ro
-    ports:
-      - 11434:11434
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # Chat UI for the Ollama server above: model picker, editable system prompt
-  # and per-request options, so translation prompts can be compared without
-  # hand-writing curl calls. CPU-only, no GPU reservation.
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      - TZ=${TZ}
-      # Reached over the compose network, so this keeps working regardless of
-      # what the host publishes 11434 as.
-      - OLLAMA_BASE_URL=http://ollama:11434
-      # This box runs local models only. Left on, the OpenAI integration probes
-      # api.openai.com at every start and stalls the model list when it fails.
-      - ENABLE_OPENAI_API=false
-    volumes:
-      - ${CONFIG_ROOT}/open-webui:/app/backend/data
-    ports:
-      # Serves on 8080 inside the container; 8080 on the host is qbittorrent.
-      - 3000:8080
-
-  # --- Vietnamese AI voice-over ------------------------------------------
-  # Opt-in profile: these services do not start with the normal NAS stack.
-  # Reclaim media-disk space and pass the documented smoke/client tests before
-  # using `docker compose --profile vn-dubbing up -d`.
-  vn-dub-scheduler:
-    profiles: [vn-dubbing]
-    image: nas-lab/vn-dubbing:0.1.0
-    build:
-      context: ./services/vn-dubbing
-      args:
-        INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
-    container_name: vn-dub-scheduler
-    user: "${PUID}:${PGID}"
-    restart: unless-stopped
-    logging: *default-logging
-    command: ["scheduler", "--interval", "${VN_DUB_SCAN_INTERVAL:-3600}"]
-    environment: &vn-dub-environment
-      TZ: ${TZ}
-      VN_DUB_STATE_DIR: /state
-      VN_DUB_MEDIA_ROOT: /data/media
-      VN_DUB_PROFILE: /app/profiles/voice-over-v1.yaml
-      VN_DUB_TAG: ${VN_DUB_TAG:-vn-dub}
-      VN_DUB_ENGINE: ${VN_DUB_ENGINE:-vieneu-v2}
-      VN_DUB_PUBLISH_MODE: ${VN_DUB_PUBLISH_MODE:-auto}
-      VN_DUB_PUBLISHED_DIR: /state/published
-      VN_DUB_PUBLISHED_LINK_ROOT: /vn-dub-published
-      VN_DUB_SCAN_INTERVAL: ${VN_DUB_SCAN_INTERVAL:-3600}
-      VN_DUB_SUPERVISOR_POLL_INTERVAL: ${VN_DUB_SUPERVISOR_POLL_INTERVAL:-30}
-      VN_DUB_LEASE_SECONDS: ${VN_DUB_LEASE_SECONDS:-180}
-      VN_DUB_MIN_MEDIA_FREE_GB: ${VN_DUB_MIN_MEDIA_FREE_GB:-20}
-      VN_DUB_STOP_PUBLISH_FREE_GB: ${VN_DUB_STOP_PUBLISH_FREE_GB:-10}
-      VN_DUB_MIN_WORK_FREE_GB: ${VN_DUB_MIN_WORK_FREE_GB:-10}
-      VN_DUB_MIN_FREE_VRAM_MB: ${VN_DUB_MIN_FREE_VRAM_MB:-7000}
-      VN_DUB_REQUIRE_GPU: ${VN_DUB_REQUIRE_GPU:-true}
-      VN_DUB_JELLYFIN_REFRESH: ${VN_DUB_JELLYFIN_REFRESH:-true}
-      VN_DUB_MAX_ATTEMPTS: ${VN_DUB_MAX_ATTEMPTS:-3}
-      RADARR_URL: ${RADARR_URL:-http://radarr:7878}
-      RADARR_API_KEY: ${RADARR_API_KEY:-}
-      JELLYFIN_URL: ${JELLYFIN_URL:-http://jellyfin:8096}
-      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
-    volumes:
-      - ${CONFIG_ROOT}/vn-dubbing:/state
-      - ${DATA_ROOT}/media:/data/media:ro
-      - ./services/vn-dubbing/profiles:/app/profiles:ro
-    healthcheck:
-      test: ["CMD", "vn-dub", "healthcheck", "--role", "scheduler", "--max-age", "3900"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  vn-dub-worker:
-    profiles: [vn-dubbing]
-    image: nas-lab/vn-dubbing:0.1.0
-    build:
-      context: ./services/vn-dubbing
-      args:
-        INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
-    container_name: vn-dub-worker
-    user: "${PUID}:${PGID}"
-    restart: unless-stopped
-    logging: *default-logging
-    command: ["supervisor"]
-    environment:
-      <<: *vn-dub-environment
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-    volumes:
-      - ${CONFIG_ROOT}/vn-dubbing:/state
-      - ${DATA_ROOT}/media:/data/media
-      - ${CONFIG_ROOT}/vn-dubbing/published:/vn-dub-published
-      - ./services/vn-dubbing/profiles:/app/profiles:ro
-      - /usr/lib/wsl:/usr/lib/wsl:ro
-    healthcheck:
-      test: ["CMD", "vn-dub", "healthcheck", "--role", "supervisor", "--max-age", "180"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   # --- Monitoring ---------------------------------------------------------
   # Beszel: host + container health with history and alerts. Hub is the web UI,
@@ -304,8 +158,11 @@ services:
       # WSL forwards localhost to, so the bind fails. 8091 on the host instead.
       - 8091:8090
 
+  # Plain agent, not the -nvidia build: this host has an Intel iGPU and the
+  # NVIDIA variant would only fail to find nvidia-smi. The GPU box runs its own
+  # agent from docker-compose.gpu.yml and reports in over the tailnet.
   beszel-agent:
-    image: henrygd/beszel-agent-nvidia:latest
+    image: henrygd/beszel-agent:latest
     container_name: beszel-agent
     restart: unless-stopped
     logging: *default-logging
@@ -322,15 +179,8 @@ services:
       # systemd and tailscaled/postgresql go unwatched.
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
       - /var/run/systemd/private:/var/run/systemd/private:ro
-      # Extra disks are monitored by bind-mounting them here. Without this the
-      # media drive - the one that actually fills up - is invisible.
-      - /mnt/f:/extra-filesystems/mnt-f:ro
-      # nvidia-smi for GPU stats, same pattern as Jellyfin
-      - /usr/lib/wsl:/usr/lib/wsl:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [utility]
+      # Extra disks are monitored by bind-mounting them here. Both target
+      # volumes are watched: the SSD holds appdata, the HDD holds the library
+      # and is the one that actually fills up.
+      - /mnt/ssd:/extra-filesystems/mnt-ssd:ro
+      - /mnt/hdd:/extra-filesystems/mnt-hdd:ro

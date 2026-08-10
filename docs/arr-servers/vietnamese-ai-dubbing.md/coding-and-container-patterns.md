@@ -87,7 +87,7 @@ sequenceDiagram
         S->>M: Find preferred Vietnamese SRT
         S->>Q: INSERT OR IGNORE immutable job identity
     end
-    P->>Q: BEGIN IMMEDIATE; lease one job
+    P->>Q: BEGIN IMMEDIATE - lease one job
     P->>C: Spawn vn-dub run --job ...
     loop each subtitle cue
         C->>C: Normalize text and synthesize

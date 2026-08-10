@@ -1,10 +1,11 @@
 # Vietnamese text-to-speech — planning
 
-Self-hosted Vietnamese TTS on the same box as the film stack. **Nothing is
-deployed yet.** This doc records the candidate evaluation, what the published
-evidence does and doesn't cover, and the bake-off that settles it.
+Vietnamese TTS research for the film stack. The temporary VieNeu-TTS Gradio
+portal was retired on 2026-08-09; no standalone TTS server is deployed. This doc
+records the candidate evaluation and the portal experiment.
 
-Status: **candidate chosen provisionally (VieNeu-TTS), pending a local A/B.**
+Status: **research retained; portal retired in favor of a run-to-completion
+dubbing worker.**
 
 Speech-ML terms used throughout are defined in the [Glossary](#glossary) at the
 end — this field has its own vocabulary and none of it is assumed here.
@@ -103,10 +104,11 @@ Models go on the ext4 root (~883 GB free), **never `/mnt/f`** — that volume is
 **4.4 GB free** (927 of 932 GB is media, verified no duplicates or orphans) and
 is 9p-mounted besides.
 
-## Deployment sketch
+## Retired portal experiment
 
-Not yet applied to `docker-compose.yml`. Port 8298 is free on this box (8080 is
-qbittorrent, 3000 open-webui, 8096 jellyfin).
+The following records what was tested. It is no longer applied to
+`docker-compose.yml`; the container, image and dedicated model cache were
+removed. Do not restore this mutable image as the production dubbing worker.
 
 Verified against the upstream `docker/Dockerfile.serve` and
 `docker/docker-compose.prod.yml`:
@@ -126,9 +128,12 @@ argument naming a HF repo, downloaded on first start. The cache volume below is
 therefore mandatory, not an optimisation: without it every restart re-downloads
 the weights.
 
-**Override the default command.** That same CMD passes `--tunnel`, which opens a
-public [bore](https://github.com/ekzhang/bore) tunnel to the internet. This box
-is reachable over Tailscale and should not be publishing anything to bore.pub.
+**Override the mutable image defaults.** The `latest` tag pulled on 2026-08-09
+starts `src/vieneu/serve.py` with `--tunnel`, which opens a public
+[bore](https://github.com/ekzhang/bore) tunnel. Compose therefore replaces both
+the entrypoint and command with the bundled `vieneu-web` Gradio portal and sets
+`GRADIO_SHARE=0`. This box is reachable over Tailscale and should publish
+nothing to bore.pub.
 
 The earlier "CPU-only by design" plan does not survive contact with the image —
 Docker deployment is GPU-only upstream. That is acceptable anyway: at 300M
@@ -142,10 +147,15 @@ still exists, but via `pip`, not this image.
   vieneu-tts:
     image: pnnbao/vieneu-tts:latest
     container_name: vieneu-tts
+    entrypoint: ["uv", "run", "vieneu-web"]
+    command: []
     restart: unless-stopped
     logging: *default-logging
     environment:
       - TZ=${TZ}
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+      - GRADIO_SHARE=0
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
@@ -165,10 +175,9 @@ still exists, but via `pip`, not this image.
               capabilities: [gpu]
 ```
 
-Reachable on the tailnet at `admin-pc-1.tail9dbb76.ts.net:8298` with no port
-forwarding, same as everything else in [REMOTE-ACCESS.md](../REMOTE-ACCESS.md).
-Start with `latest` — the Gradio UI is what the bake-off needs for listening.
-Switch to `serve` (`:23333`) only once a winner is picked and an API is wanted.
+The retired portal was reachable on port 8298. The production design now uses a
+per-movie child process so model memory is released after each long-running job;
+see the [dubbing proposals](../arr-servers/vietnamese-ai-dubbing.md/proposals.md).
 
 If Open WebUI integration is wanted, VieNeu's endpoint is **not** documented as
 OpenAI-compatible (the image serves Gradio on 7860 and LMDeploy on 23333) — it

@@ -21,6 +21,11 @@ Recyclarr is the one service that is not long-running: it has `restart: "no"` an
 invoked on demand (`docker compose run --rm recyclarr sync`), does its work against
 the Radarr/Sonarr APIs, then exits. It has no web UI and no published port.
 
+The proposed `vn-dub` movie workflow is intentionally not listed as a component
+yet because it has not been deployed. Its reviewed scheduler, worker and Jellyfin
+audio-sidecar design is in the
+[Vietnamese AI dubbing proposals](../vietnamese-ai-dubbing.md/proposals.md).
+
 ## Component diagram
 
 ```mermaid

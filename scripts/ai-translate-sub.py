@@ -261,22 +261,27 @@ Translate these {n} lines:
 
 
 # Compounds that merely contain "tôi"/"bạn" without being the pronoun.
-# "chúng tôi" is we, "bạn bè" is friends — glossing inside either produces
-# nonsense like "chúng I (tôi)".
+# "chúng tôi" is we, "bạn bè" is friends — capitalising inside either produces
+# nonsense like "chúng TÔI".
 GLOSS_SKIP_RE = re.compile(
     r"chúng\s+tôi|bạn\s+(?:bè|gái|trai|học|thân|đọc|đồng)|người\s+bạn", re.I
 )
 PRONOUN_RE = re.compile(r"\b(tôi|bạn)\b", re.I)
 
 
-GLOSS = {"tôi": "I (TÔI)", "bạn": "YOU (BẠN)"}
+GLOSS = {"tôi": "TÔI", "bạn": "BẠN"}
 
 
 def gloss_pronouns(text):
-    """Rewrite the neutral pronouns as "I (TÔI)" and "YOU (BẠN)".
+    """Rewrite the neutral pronouns as "TÔI" and "BẠN".
 
     Fully capitalised on purpose: these are the two words the viewer is meant to
     resolve themselves from context, so they should be impossible to skim past.
+
+    The English word travelled alongside until 2026-08-09 ("I (TÔI)"). These
+    files now also feed text-to-speech, and a synthesiser reads that literally —
+    "I TÔI". Capitalisation keeps the visual cue; dropping the gloss keeps the
+    line speakable.
 
     Done here rather than by instructing the model. Asked to gloss inline, it
     complied on 32% of "I" and 4% of "you" across a full episode and drifted

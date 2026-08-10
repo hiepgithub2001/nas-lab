@@ -1,0 +1,189 @@
+# GPU stack — stays on the Windows/WSL box with the RTX 4080 Super.
+#
+# Split out of docker-compose.yml on 2026-08-10 when the media stack moved to
+# the NAS. The NAS has no NVIDIA GPU (Intel Iris Xe only), and these three
+# workloads are the only ones that genuinely need CUDA:
+#
+#   ollama         qwen3:8b runs at 101 tok/s on the 4080 and roughly 5-10 tok/s
+#                  on CPU. A film's subtitles go from ~5 minutes to 1-2 hours.
+#   vn-dub-worker  VoxCPM2 is CUDA-only and will not start without it; VieNeu v2
+#                  falls back to CPU at RTF 1-3, so an episode goes from ~27
+#                  minutes to ~3 hours.
+#   beszel-agent   the NVIDIA build, so GPU stats keep reporting.
+#
+# Run with:  docker compose -f docker-compose.gpu.yml up -d
+#            docker compose -f docker-compose.gpu.yml --profile vn-dubbing up -d
+#
+# UNFINISHED — cross-host wiring, deliberately left for a follow-up:
+#   * vn-dub mounts ${DATA_ROOT}/media, which now lives on the NAS. Until that
+#     is an NFS/SMB mount on this box, the dubbing profile cannot see the media.
+#   * vn-dub-scheduler talks to http://radarr:7878 and http://jellyfin:8096 by
+#     compose service name. Those names do not resolve across hosts — point
+#     RADARR_URL / JELLYFIN_URL at the NAS over Tailscale.
+#   * Jellyfin on the NAS mounts vn-dubbing/published read-only to serve the
+#     finished audio. That path is on this box and needs sharing back.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # --- LLM ----------------------------------------------------------------
+  # Local model server, used for English -> Vietnamese subtitle translation.
+  # See docs/technical/LLM-SUBTITLES.md.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      # Kept from the shared-GPU days: Jellyfin has moved to the NAS, but the
+      # dubbing worker below now competes for the same 16 GB, so unloading an
+      # idle model still matters.
+      - OLLAMA_KEEP_ALIVE=5m
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - ${CONFIG_ROOT}/ollama:/root/.ollama
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    ports:
+      - 11434:11434
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Chat UI for the Ollama server above.
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # This box runs local models only. Left on, the OpenAI integration probes
+      # api.openai.com at every start and stalls the model list when it fails.
+      - ENABLE_OPENAI_API=false
+    volumes:
+      - ${CONFIG_ROOT}/open-webui:/app/backend/data
+    ports:
+      - 3000:8080
+
+  # --- Vietnamese AI voice-over ------------------------------------------
+  # Opt-in profile: does not start with `up -d` unless --profile vn-dubbing.
+  vn-dub-scheduler:
+    profiles: [vn-dubbing]
+    image: nas-lab/vn-dubbing:0.1.0
+    build:
+      context: ./services/vn-dubbing
+      args:
+        INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
+    container_name: vn-dub-scheduler
+    user: "${PUID}:${PGID}"
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["scheduler", "--interval", "${VN_DUB_SCAN_INTERVAL:-3600}"]
+    environment: &vn-dub-environment
+      TZ: ${TZ}
+      VN_DUB_STATE_DIR: /state
+      VN_DUB_MEDIA_ROOT: /data/media
+      VN_DUB_PROFILE: /app/profiles/voice-over-v1.yaml
+      VN_DUB_TAG: ${VN_DUB_TAG:-vn-dub}
+      VN_DUB_ENGINE: ${VN_DUB_ENGINE:-vieneu-v2}
+      VN_DUB_PUBLISH_MODE: ${VN_DUB_PUBLISH_MODE:-auto}
+      VN_DUB_PUBLISHED_DIR: /state/published
+      VN_DUB_PUBLISHED_LINK_ROOT: /vn-dub-published
+      VN_DUB_SCAN_INTERVAL: ${VN_DUB_SCAN_INTERVAL:-3600}
+      VN_DUB_SUPERVISOR_POLL_INTERVAL: ${VN_DUB_SUPERVISOR_POLL_INTERVAL:-30}
+      VN_DUB_LEASE_SECONDS: ${VN_DUB_LEASE_SECONDS:-180}
+      VN_DUB_MIN_MEDIA_FREE_GB: ${VN_DUB_MIN_MEDIA_FREE_GB:-20}
+      VN_DUB_STOP_PUBLISH_FREE_GB: ${VN_DUB_STOP_PUBLISH_FREE_GB:-10}
+      VN_DUB_MIN_WORK_FREE_GB: ${VN_DUB_MIN_WORK_FREE_GB:-10}
+      VN_DUB_MIN_FREE_VRAM_MB: ${VN_DUB_MIN_FREE_VRAM_MB:-7000}
+      VN_DUB_REQUIRE_GPU: ${VN_DUB_REQUIRE_GPU:-true}
+      VN_DUB_JELLYFIN_REFRESH: ${VN_DUB_JELLYFIN_REFRESH:-true}
+      VN_DUB_MAX_ATTEMPTS: ${VN_DUB_MAX_ATTEMPTS:-3}
+      # Compose service names no longer resolve — the *arr apps are on the NAS.
+      RADARR_URL: ${RADARR_URL:-http://nas:7878}
+      RADARR_API_KEY: ${RADARR_API_KEY:-}
+      JELLYFIN_URL: ${JELLYFIN_URL:-http://nas:8096}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+    volumes:
+      - ${CONFIG_ROOT}/vn-dubbing:/state
+      - ${GPU_MEDIA_ROOT:-/mnt/nas-media}:/data/media:ro
+      - ./services/vn-dubbing/profiles:/app/profiles:ro
+    healthcheck:
+      test: ["CMD", "vn-dub", "healthcheck", "--role", "scheduler", "--max-age", "3900"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  vn-dub-worker:
+    profiles: [vn-dubbing]
+    image: nas-lab/vn-dubbing:0.1.0
+    build:
+      context: ./services/vn-dubbing
+      args:
+        INSTALL_VOXCPM: ${VN_DUB_INSTALL_VOXCPM:-false}
+    container_name: vn-dub-worker
+    user: "${PUID}:${PGID}"
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["supervisor"]
+    environment:
+      <<: *vn-dub-environment
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${CONFIG_ROOT}/vn-dubbing:/state
+      - ${GPU_MEDIA_ROOT:-/mnt/nas-media}:/data/media
+      - ${CONFIG_ROOT}/vn-dubbing/published:/vn-dub-published
+      - ./services/vn-dubbing/profiles:/app/profiles:ro
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    healthcheck:
+      test: ["CMD", "vn-dub", "healthcheck", "--role", "supervisor", "--max-age", "180"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # --- Monitoring ---------------------------------------------------------
+  # NVIDIA build so GPU stats keep reporting. The Beszel hub itself moved to the
+  # NAS; this agent reaches it over the tailnet rather than the local socket.
+  beszel-agent:
+    image: henrygd/beszel-agent-nvidia:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: host
+    environment:
+      - TZ=${TZ}
+      - LISTEN=45876
+      - KEY=${BESZEL_KEY}
+    volumes:
+      - ${CONFIG_ROOT}/beszel/agent:/var/lib/beszel-agent
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+      - /var/run/systemd/private:/var/run/systemd/private:ro
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [utility]
