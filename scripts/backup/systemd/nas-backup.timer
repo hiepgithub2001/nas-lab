@@ -1,0 +1,9 @@
+[Unit]
+Description=NAS backup to F: -- twice per WSL boot, not continuous
+
+[Timer]
+OnBootSec=2min
+OnBootSec=62min
+
+[Install]
+WantedBy=timers.target

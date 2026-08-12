@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily encrypted offsite Kopia snapshot to Google Drive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=1001
+ExecStart=/mnt/ssd/nas-lab/scripts/backup/snapshot-offsite.sh

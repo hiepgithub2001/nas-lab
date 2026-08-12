@@ -1,0 +1,7 @@
+[Unit]
+Description=Quiesce appdata SQLite databases into a consistent dump set
+
+[Service]
+Type=oneshot
+User=1001
+ExecStart=/mnt/ssd/nas-lab/scripts/backup/dump-sqlite.sh

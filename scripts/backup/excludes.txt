@@ -1,0 +1,49 @@
+# Shared exclusions — applied by BOTH services, on both hosts.
+#
+# This list is deliberately short. It holds only what *cannot* be backed up —
+# not what's expensive or regenerable. Both legs back up the full data set:
+# service (1) has 930 GB of local disk, and service (2)'s Drive destination
+# has 5 TB, so there is no size ceiling driving exclusions on either leg.
+#
+# Paths are relative to the snapshot root: /mnt/ssd on the NAS, /mnt/nas-ssd on
+# the PC. Most start at `nas-lab/`, the directory both roots contain; a few
+# (lost+found/) sit at the snapshot root itself.
+#
+# No inline comments — the apply loop only skips lines that *start* with '#',
+# so trailing text would become part of the pattern.
+
+# --- Unreadable by any user the backup can run as ---
+#
+# The NFS export is all_squash,anonuid=1001,anongid=1001: every client UID,
+# root included, reaches the server as 1001. Service (2) runs as 1001 on the
+# NAS directly. So a 0600/0700 root:root entry is unreadable from both legs,
+# and running either as root would change nothing. Kopia counts an unreadable
+# entry as a fatal error and exits non-zero, so leaving these in means the
+# unit fails on every single run.
+
+# ext4's reserved recovery directory, 0700 root:root
+lost+found/
+
+# Beszel's hub SSH private key, 0600 root:root — the container generated it as
+# root despite PUID=1001. Losing it means regenerating a keypair and
+# re-registering agents against the new public key: an annoyance, not data loss.
+nas-lab/appdata/beszel/data/id_ed25519
+
+# --- Not regular files: nothing to store, nothing to restore ---
+#
+# Kopia's global policy has "ignore unknown types: true" and would skip these
+# silently anyway; naming them keeps that from becoming a surprise if the
+# global default is ever flipped.
+nas-lab/appdata/qbittorrent/qBittorrent/ipc-socket
+nas-lab/appdata/beszel/socket/
+
+# Stale lock from a previous run — restoring it can stop qBittorrent starting.
+nas-lab/appdata/qbittorrent/qBittorrent/lockfile
+
+# --- This backup system's own transient state ---
+#
+# Half-written dump sets, caught mid-publish. The finished set
+# (appdata-dumps/current/) is backed up, and is the restore source for every
+# SQLite-backed app.
+nas-lab/appdata-dumps/.staging.*
+nas-lab/appdata-dumps/.old

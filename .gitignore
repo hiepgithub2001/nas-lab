@@ -2,3 +2,5 @@ appdata/
 .env
 # CREDENTIALS.md
 __pycache__/
+appdata-dumps/
+.backup-state/

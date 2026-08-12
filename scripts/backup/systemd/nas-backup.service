@@ -1,0 +1,9 @@
+[Unit]
+Description=Kopia snapshot of the NAS to F: (service 1 — twice per WSL boot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=lehiep
+ExecStart=/mnt/nas-ssd/nas-lab/scripts/backup/snapshot-local.sh

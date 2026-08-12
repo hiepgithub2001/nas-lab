@@ -1,72 +1,101 @@
 # Backup services — plan
 
-Two independent backup services protecting `/mnt/ssd` on the NAS: an hourly local
-copy pulled to the PC, and a daily encrypted offsite copy pushed to Google Drive.
+Two independent backup services protecting `/mnt/ssd` on the NAS: a local copy
+pulled to the PC twice per WSL session, and a daily encrypted offsite copy pushed
+to Google Drive. **Both run Kopia.** One tool, one repository format, one
+restore procedure.
 
-Status: **plan, for review. Nothing here is built yet.** One open decision is
-flagged in [Tool for service (2)](#open-decision-tool-for-service-2); everything
-else is a recommendation ready to implement.
+Status: **decided, partly built.** Kopia on both legs, Google Drive for offsite,
+accepted with eyes open on the tradeoff explained in [Why Google Drive despite
+the rclone bridge](#why-google-drive-despite-the-rclone-bridge).
 
-Step-by-step setup — scripts, unit files, exact commands — lives in
-[IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Service (1) is live** as of 2026-08-13: repository created on `/mnt/f`, policy
+applied, timer enabled, snapshots verified clean. **Service (2) is staged but
+not running** — Kopia 0.23.1 and rclone 1.75.0 are installed on the NAS, and
+what remains is the one-time Google OAuth authorization, which needs a browser
+and cannot be scripted. See
+[QUICK-START.md](QUICK-START.md#set-up-and-kick-start--service-2).
+
+Architecture diagrams — how the pieces fit together — live in
+[PLAN.md](PLAN.md). Step-by-step setup and day-to-day operation — checking
+status, manual snapshots, failure alerts — live in
+[QUICK-START.md](QUICK-START.md). **Getting data back out is
+[RESTORE.md](RESTORE.md)**, kept separate because it is the one you read during
+an outage; every command in it has been run and verified rather than written
+from memory.
 
 | | Service (1) — local | Service (2) — offsite |
 |---|---|---|
+| Tool | **Kopia** | **Kopia** |
 | Runs on | **PC** (WSL) | **NAS** (`ubuntu-2404`) |
 | Direction | pull `/mnt/nas-ssd` → `/mnt/f` | push `/mnt/ssd` → Google Drive |
-| Frequency | hourly | daily |
+| Frequency | 2× per WSL boot: at start, then 1h later | daily |
 | Trigger | systemd timer, fires on WSL start | systemd timer |
 | Reads source over | NFS | local disk |
+| Scope | **everything readable** — ~8.2 GB | **everything readable** — ~8.2 GB |
 | Purpose | fast restore, recent history | disaster recovery |
 
-They share no code path and no repository. That is deliberate — see
-[Why two tools is a feature](#why-two-tools-is-a-feature).
+Both legs back up the same full data set — see [Why both legs back up
+everything](#why-both-legs-back-up-everything) for the reversal from this
+plan's earlier size-curated design.
 
-## The finding: this is ~600 MB of data, not 20 GB
+Service (1) is not a continuous hourly job — it fires once at WSL startup and
+once more an hour later, then stops until the next boot. See
+[Scheduling](#scheduling) for why, and for what that does to service (1)'s
+retention policy.
 
-`/mnt/ssd` measures 20 GB, but almost all of it is regenerable. Measured
-2026-08-12:
+The two repositories are **separate and independent** — same tool, no shared
+state. See [Two repositories, not one](#two-repositories-not-one).
 
-| Path | Size | Keep? |
-|---|---|---|
-| `appdata/jellyfin/cache` | **13 G** | ✗ regenerable on demand |
-| `appdata/ollama` | **4.9 G** | ✗ re-pullable model blobs |
-| `appdata/open-webui` | 890 M | ~ chat history + chroma vectors — your call |
-| `appdata/radarr` | 165 M | ✓ (minus `logs.db`, `MediaCover/`) |
-| `appdata/jellyfin/data/metadata` | 117 M | ~ re-fetchable, but slow and rate-limited |
-| `appdata/recyclarr` | 78 M | ✓ |
-| `appdata/sonarr` | 75 M | ✓ (minus `logs.db`) |
-| `appdata/prowlarr` | 58 M | ✓ (minus `logs.db` — 7.4 M of its 58 M) |
-| `appdata/jellyfin/data/data` | 17 M | ✓ `jellyfin.db` — users, watch history |
-| `appdata/qbittorrent` | 15 M | ✓ `BT_backup/` is the critical part |
-| `appdata/bazarr` | 9.2 M | ✓ |
-| `appdata/beszel` | 5.4 M | ✓ |
-| `appdata/vn-dubbing` | 1.6 M | ✓ `dubbing.sqlite3` |
-| repo (`docs/`, `scripts/`, `services/`, compose files, `.env`) | ~700 K | ✓ |
+## Why both legs back up everything
 
-**Irreplaceable set: roughly 600 MB**, or ~1.5 GB if you keep `open-webui`.
+This plan originally curated what got backed up, and the two legs curated
+differently. `/mnt/ssd` measures ~20 GB on disk, but a lot of it is regenerable
+— Jellyfin's transcode cache, Ollama's model blobs — and the earlier version of
+this document sized the offsite leg against Google Drive's **free 15 GB tier**,
+trimming the regenerable bulk so the backup would fit without a storage
+purchase. Service (1), writing to a 932 GB local drive, never had that
+constraint and always kept everything it could read.
 
-This is the number that makes the whole plan cheap. Service (2) fits inside
-Google's free 15 GB tier with room for a year of version history — no Google One
-subscription needed. Service (1) becomes a sub-minute job.
+**That constraint is gone.** The Drive destination is a paid account with
+**5 TB** of headroom, not the 15 GB free tier — several orders of magnitude
+past anything `/mnt/ssd` will grow to. Curating for space was worth the
+judgement calls against a real 15 GB ceiling; it buys nothing against 5 TB,
+and it has a real cost the earlier version of this doc underweighted: a
+restore that silently lacks whatever a past size-judgement decided was
+"regenerable," discovered at the worst possible time. Completeness now beats
+curation on both legs, so both legs apply the same policy.
 
-The exclusions are not an optimisation, they are the design. Backing up 13 GB of
-Jellyfin cache hourly across 9p to NTFS would be slow, would churn the drive, and
-would protect nothing.
+**Both services exclude only what is physically impossible to back up** — not
+size, not "will probably never need it," just unreadable paths (ext4's
+`lost+found`, Beszel's root-owned SSH key — both `0600`/`0700 root:root`, and
+the NFS export is `all_squash,anonuid=1001` so no client UID, root included,
+can read them either) and things that aren't real files (sockets, a stale
+lock, this system's own staging directories). One file,
+`scripts/backup/excludes.txt`, shared verbatim by both legs, applied and
+verified by `scripts/backup/apply-policy.sh local|offsite`.
+
+Measured 2026-08-13: a full local snapshot is **7.8 GB across 11,008 files and
+takes 59 seconds** over NFS, and the repository on `/mnt/f` holds 6.7 GB after
+zstd and dedup. Subsequent runs re-read almost nothing, since large static
+blobs like Ollama's models never change and dedupe to a single stored copy —
+they only cost space on the *first* snapshot that sees them, and cost it
+again only if their bytes actually change (a model update, not a re-run).
 
 ## The real risk is live SQLite, not the tool
 
 Every service here stores its state in SQLite with a write-ahead log:
 
 ```
-appdata/radarr/radarr.db           6.6 M
-appdata/sonarr/sonarr.db          10.1 M
-appdata/prowlarr/prowlarr.db      23.0 M
-appdata/bazarr/db/bazarr.db        1.2 M
-appdata/jellyfin/data/data/jellyfin.db   5.3 M
-appdata/beszel/data/data.db        1.3 M
-appdata/open-webui/webui.db        0.8 M
-appdata/vn-dubbing/dubbing.sqlite3 1.2 M   (+ 4 M -wal right now)
+appdata/radarr/radarr.db                  6.6 M
+appdata/sonarr/sonarr.db                 10.1 M
+appdata/prowlarr/prowlarr.db             23.0 M
+appdata/bazarr/db/bazarr.db               1.2 M
+appdata/jellyfin/data/data/jellyfin.db    5.3 M
+appdata/beszel/data/data.db               1.3 M
+appdata/open-webui/webui.db               0.8 M
+appdata/open-webui/vector_db/chroma.sqlite3
+appdata/vn-dubbing/dubbing.sqlite3        1.2 M   (+ 4 M -wal right now)
 ```
 
 A backup that copies `radarr.db` at 10:00:00 and `radarr.db-wal` at 10:00:03 has
@@ -100,8 +129,8 @@ Why NAS-side and not from WSL: SQLite locking across NFS is unreliable, and
 service (1) reads over NFS. Running the dump locally on the NAS sidesteps it, and
 one dump serves both services.
 
-Schedule: hourly at **:50**, so a fresh dump always precedes service (1)'s
-hourly run and service (2)'s daily run.
+Schedule: hourly at **:50**, so a fresh dump always precedes whichever runs
+next — either of service (1)'s two per-boot runs, or service (2)'s daily run.
 
 `appdata-dumps/` must be added to `.gitignore`.
 
@@ -133,19 +162,19 @@ decision](#what-would-change-this-decision).
 
 **Whole-machine imaging** (Proxmox Backup Server, UrBackup, Veeam Agent) backs up
 the entire host, bare-metal-restorable. Real value at fleet scale; wildly
-disproportionate for 600 MB of application state on two machines.
+disproportionate for a few GB of application state on two machines.
 
 ### Candidates compared
 
 | Tool | Family | Encrypted at rest | Dedup + compression | Point-in-time history | Reaches Google Drive | Verdict here |
 |---|---|---|---|---|---|---|
-| **Kopia** | snapshotter | ✅ | ✅ zstd | ✅ | ⚠️ experimental / unmaintained bridges | **chosen — service (1)** |
-| **restic** | snapshotter | ✅ | ✅ (since 0.14) | ✅ | ✅ first-class rclone backend | **chosen — service (2)** |
-| **rclone** | mirror | ✅ via `crypt` remote | ❌ | ⚠️ `--backup-dir` only | ✅ native, 70+ providers | used as restic's *transport*, not as the backup tool |
+| **Kopia** | snapshotter | ✅ | ✅ zstd | ✅ | ⚠️ via unmaintained rclone bridge — accepted, see below | **chosen — both services** |
+| restic | snapshotter | ✅ | ✅ (since 0.14) | ✅ | ✅ first-class rclone backend | strong runner-up — rejected only to keep one tool |
+| rclone | mirror | ✅ via `crypt` remote | ❌ | ⚠️ `--backup-dir` only | ✅ native | used as Kopia's *transport* to Drive, not as the backup tool |
 | rsync | mirror | ❌ | ❌ (delta transfer only) | ⚠️ `--link-dest` hardlink trees | ❌ | rejected |
 | Syncthing | continuous mirror | in transit only | ❌ | ⚠️ file versioning | ❌ | rejected — it is sync, not backup |
 | BorgBackup 1.x | snapshotter | ✅ | ✅ | ✅ | ❌ SSH/local only | rejected |
-| BorgBackup 2.0 | snapshotter | ✅ | ✅ | ✅ | ✅ via borgstore/rclone | rejected — still beta |
+| BorgBackup 2.0 | snapshotter | ✅ | ✅ | ✅ | ✅ via borgstore | rejected — still beta |
 | Duplicati | snapshotter | ✅ | ✅ | ✅ | ✅ | rejected — restore reliability |
 | Duplicity | snapshotter | ✅ GPG | ❌ dedup; incremental chains | ✅ | ✅ | rejected — chain fragility |
 | ZFS / btrfs send | filesystem | ✅ native | ✅ | ✅ **atomic** | ❌ | unavailable — `/mnt/ssd` is ext4 |
@@ -167,7 +196,7 @@ bidirectional sync means a deletion or corruption reaches the other side in
 seconds — faster propagation of the exact failure we are defending against.
 
 **Borg** is the most battle-tested deduplicating backup tool in this list, and
-1.x reaches only SSH and local targets — no Google Drive. [Borg
+1.x reaches only SSH and local targets — no object storage. [Borg
 2.0](https://www.borgbackup.org/releases/borg-2.0.html) fixes exactly that,
 adding rclone and S3/B2 backends through `borgstore`, and it would be a genuine
 contender. It has been in beta for years and is still shipping `2.0.0b23`
@@ -183,135 +212,162 @@ chain of GPG-encrypted incrementals, so one damaged volume mid-chain can
 invalidate everything after it, and periodic full re-uploads are required to keep
 chains short. Superseded by everything else in the snapshotter column.
 
-### Why Kopia for service (1)
+**restic** loses nothing on merit — it is the one tool here that could replace
+Kopia outright. It is rejected only because using both would mean two restore
+procedures, and that cost is [discussed below](#what-one-tool-gives-up).
 
-Against restic, on this specific leg, Kopia wins on three concrete points:
+### Why Kopia
 
 - **Metadata fidelity on a hostile destination.** Kopia stores ownership and
   permissions inside the repository, so restores are faithful regardless of what
-  NTFS can express. This is the single biggest reason not to mirror.
+  NTFS can express. This is the single biggest reason not to mirror onto `/mnt/f`.
 - **Cheap repeat runs over NFS.** Its content-addressed local cache means an
   hourly run re-reads almost nothing across the network.
 - **Retention as policy, not as a cron flag.** `kopia policy set` attaches
   hourly/daily/weekly/monthly rules to the source path; the snapshot command
-  stays a one-liner and cannot drift from the retention intent.
+  stays a one-liner and cannot drift from the retention intent. The same is true
+  of the exclusion list — it lives in the repository policy, not in each
+  invocation.
 
 Kopia is also measurably faster than restic on large counts of small files, which
-describes `appdata/` well — though at 600 MB that is a tiebreaker, not an
+describes `appdata/` well — though at a few GB that is a tiebreaker, not an
 argument.
 
-### Why restic for service (2)
+## Why Google Drive despite the rclone bridge
 
-The offsite leg inverts the priorities. Metadata fidelity is equal, speed is
-irrelevant at 600 MB daily, and the thing that actually matters is that the path
-to Google Drive is *maintained*:
+This is the one place the plan accepts a real cost to keep a single tool, so it
+is worth stating plainly rather than glossing over.
 
-- Kopia's native Drive backend is experimental and requires a GCP service
-  account, and its [rclone-backed repository
-  commands](https://kopia.io/docs/reference/command-line/common/repository-create-rclone/)
-  are marked "not maintained" in Kopia's own documentation.
-- restic's rclone backend is first-class, widely deployed, and actively
-  maintained. `RESTIC_REPOSITORY=rclone:gdrive:...` is the whole integration.
+**Kopia cannot reach Google Drive cleanly. Neither of its two paths there is
+good.**
 
-restic encrypts before anything leaves the house, so Google receives blobs and
-never plaintext of `.env` or `docs/CREDENTIALS.md`. Do not additionally wrap it
-in an rclone `crypt` remote — double encryption costs CPU and complicates restore
-for no gain.
+**Native Drive backend** requires a Google *service account*, and Drive charges
+uploaded files to their **owner** — which is the service account, not you.
+Service accounts have no Drive quota on a consumer account, so uploads fail with
+`storage quota exceeded` while your own 15 GB sits empty
+([kopia#2656](https://github.com/kopia/kopia/issues/2656)). The documented fix is
+a Shared Drive or domain-wide delegation, both Google Workspace–only. On a
+personal Gmail account this is a hard blocker — this path is not used.
 
-#### "restic + rclone" is one backup tool, not two
+**The rclone bridge**, which is what this plan uses instead, works by Kopia
+spawning `rclone serve webdav` as a subprocess and speaking WebDAV to it over
+localhost. That indirection is where the known failures live: [`timed out
+waiting for rclone to start`](https://github.com/kopia/kopia/issues/2573),
+[missing WebDAV cert paths](https://github.com/kopia/kopia/issues/4429),
+[`PutBlob() failed` against Drive](https://github.com/kopia/kopia/issues/1698).
+It works for many people, and it is also the code path [Kopia's own
+documentation declines to
+maintain](https://kopia.io/docs/reference/command-line/common/repository-create-rclone/).
 
-A common misreading, so stated plainly: **rclone is a storage driver, not a
-backup tool.** restic does all the backup work — chunking, deduplication,
-encryption, snapshots, retention. rclone only knows how to speak Google Drive's
-API, which restic cannot do natively.
+Accepting this path also means accepting that rclone is a second required
+binary, present on whatever machine a restore happens from — "Kopia only" here
+means one *backup format*, not one binary. See [Google Drive
+specifics](#google-drive-specifics) for the two concrete failure modes to guard
+against (the 7-day token expiry and the WebDAV startup race) and how this plan
+mitigates each.
 
-The mechanism matters, because it is the whole reason this path is trusted where
-Kopia's is not. restic spawns
+The alternative that avoids all of this — B2 or R2 via Kopia's native S3
+backend, no rclone, no OAuth, no bridge — remains on the table. See [What would
+change this decision](#what-would-change-this-decision) for when to revisit.
 
-```
-rclone serve restic --stdio gdrive:nas-backup/restic
-```
+## Two repositories, not one
 
-as a **subprocess and pipes to its stdin/stdout**. No HTTP server, no localhost
-port, no TLS certificate, no service listening on the NAS. Kopia's bridge spawns
-`rclone serve webdav` and talks HTTPS to it over localhost instead — that extra
-indirection is precisely where its [cert path
-failures](https://github.com/kopia/kopia/issues/4429) and [startup
-timeouts](https://github.com/kopia/kopia/issues/2573) come from.
+Both services run Kopia, but against **two separate repositories**, each
+snapshotting its own source. The tempting simplification is to snapshot once and
+use `kopia repository sync-to` to mirror the repository from Drive down to
+`/mnt/f`. Do not: a synced repository is a byte-for-byte copy, so repository-level
+corruption reaches both copies, and it means downloading from the cloud hourly to
+maintain a local copy of data that is already local.
 
-**rclone is in this design only because the destination is Google Drive.**
-Neither Kopia nor restic reaches Drive natively; both reach S3, B2 and R2
-natively. Choosing option B in the table below removes rclone from the system
-entirely:
+Two repositories means the local copy stays independent, and stays useful when
+the internet is down.
 
-| | Backup engine | Storage driver | Binaries needed to restore |
-|---|---|---|---|
-| Option A — restic → Drive | restic | rclone | restic + rclone |
-| Option B — Kopia → B2/R2 | Kopia | *(none)* | kopia |
+## What one tool gives up
 
-Counting binaries is not pedantry. Every one of them has to be installed,
-version-matched, and working on whatever machine you are rebuilding from — at the
-worst possible moment.
+Honest accounting, because the earlier draft of this plan chose two tools
+deliberately.
 
-Separately, the "two tools, two restore procedures" cost weighed in [Why two
-tools rather than one](#why-two-tools-rather-than-one) refers to **Kopia on
-leg 1 versus restic on leg 2** — two backup engines across the two services. It
-is not about restic and rclone within service (2).
+The dominant failure mode of deduplicating backup tools is not disk failure — it
+is repository corruption or a format bug, and deduplication means a single bad
+blob can poison many snapshots at once. Running Kopia on both legs means a Kopia
+format bug could in principle affect both copies at once. Two independent formats
+would rule that out.
 
-### Why two tools rather than one
+What one tool buys in exchange:
 
-The obvious objection is that one tool means one restore procedure to learn and
-test. That is a real cost and it is the strongest argument for using restic on
-both legs, which remains a reasonable choice.
+- **One restore procedure**, learned once and tested once. Format diversity is
+  only worth anything if *both* restore paths are actually drilled, and two
+  untested restore paths are strictly worse than one tested one.
+- **One set of credentials**, one config file layout, one command vocabulary for
+  the parts that matter: snapshot creation, retention policy, restore, verify.
+- **One dump script and one exclusion list**, shared verbatim by both services.
 
-The counterargument: the dominant failure mode of deduplicating backup tools is
-not disk failure, it is repository corruption or a format bug — and deduplication
-means a single bad blob can poison many snapshots at once. Two copies in two
-independent formats means a Kopia repository bug cannot take the offsite copy
-with it. Since the two services already run on different hosts, on different
-schedules, against different destinations, format diversity is close to free.
+This plan does **not** get to drop rclone or the OAuth dance — see [Why Google
+Drive despite the rclone bridge](#why-google-drive-despite-the-rclone-bridge).
+That cost is paid regardless of which backup tool sits in front of it, because
+it is Drive's cost, not restic's or Kopia's.
 
-It is only free if **both** restore procedures are actually tested. Two untested
-restore paths are strictly worse than one tested one.
+The residual risk is mitigated the way it should be: by [verification and restore
+testing](#verification-and-restore-testing), which catches a corrupt repository
+regardless of format. `kopia snapshot verify` on both legs is the control that
+matters here, and it is now the same command on both.
 
-### What would change this decision
+## What would change this decision
 
 - **`/mnt/ssd` moving to ZFS or btrfs.** A filesystem snapshot is atomic across
   the whole dataset, which solves the live-SQLite problem structurally — no dump
   step, no `VACUUM INTO`, no staleness guard. That is a better answer than
   anything above, and it is unavailable only because the volume is ext4.
-- **Borg 2.0 reaching stable.** Its rclone backend plus Borg's track record would
-  make it the strongest single-tool answer for both legs.
-- **The dataset growing past ~10 GB.** Both free tiers — Google's 15 GB and
-  B2/R2's 10 GB — stop being the sizing assumption, and the calculus becomes
-  price per GB rather than which free tier fits. S3-class object storage stays
-  cheaper than Drive at that point, and is natively supported by both tools with
-  no rclone bridge at all.
+- **Borg 2.0 reaching stable.** Its object-storage backends plus Borg's track
+  record would make it a genuine contender for both legs.
+- **The rclone bridge actually failing in practice** — a startup timeout or a
+  failed snapshot traced to the WebDAV hop rather than to Drive itself. That is
+  the concrete signal to stop tolerating it and move service (2) to B2 or R2 via
+  Kopia's native S3 backend: no rclone, no OAuth, no bridge, same tool, same
+  restore command.
+- **The dataset growing large enough that price-per-GB starts to matter.**
+  Irrelevant at the current few-GB scale against 5 TB, but if `/mnt/ssd` ever
+  grows into the hundreds of GB, object storage (B2/R2, ~$6/TB/month) becomes
+  the cheaper destination than Drive at scale.
+- **A Kopia repository-format bug actually biting.** That is the scenario [one
+  tool](#what-one-tool-gives-up) accepts. If it happens, adding restic on leg 2
+  is a contained change — the dumps and exclusion list are tool-agnostic and
+  would carry over unchanged.
 
-## Service (1) — hourly NAS → PC
-
-**Tool: Kopia** — see [Why Kopia for service (1)](#why-kopia-for-service-1).
+## Service (1) — NAS → PC, twice per WSL boot
 
 ```
-/mnt/nas-ssd  ──kopia snapshot──>  /mnt/f/nas-backup/kopia
+/mnt/nas-ssd  ──kopia snapshot──>  /mnt/f/nas-ssd-backup
    (NFS, read-only)                 (9p → NTFS)
 ```
 
 ### Scheduling
 
+Deliberately not a continuous hourly job. WSL only backs the NFS mount while
+it's up, and the two runs it fires — one right at boot, one an hour later — are
+meant to catch "just started working" and "been working a while," not to run
+indefinitely for as long as the terminal happens to stay open. After the second
+run the timer goes quiet until the next boot.
+
 `systemd=true` is already set in `/etc/wsl.conf` on this box, so a timer is the
-clean answer:
+clean answer. Two `OnBootSec=` lines, not `OnBootSec=` + `OnUnitActiveSec=` —
+systemd treats repeated monotonic timer directives as additive, each firing once
+per boot at its offset, rather than one re-arming the other:
 
 ```ini
 [Timer]
 OnBootSec=2min          # "when I open WSL" — WSL boot is the trigger
-OnUnitActiveSec=1h      # then hourly
-Persistent=true         # catch up one missed run if the PC was off
+OnBootSec=62min          # second run, ~1h after the first
 ```
 
-`Persistent=true` is the part cron cannot do. Kopia's own built-in scheduler is
-the wrong choice here — it requires a long-running `kopia server` process, which
-is more moving parts than a timer.
+`OnUnitActiveSec=1h` is what would make this keep firing every hour
+indefinitely — that is the thing being deliberately avoided here, so it is left
+out. `Persistent=true` is also dropped: it only affects `OnCalendar=`-style
+timers (catching up a missed wall-clock trigger), and both triggers here are
+boot-relative, recomputed fresh every boot — there is nothing for it to catch up.
+
+Kopia's own built-in scheduler is the wrong choice regardless — it requires a
+long-running `kopia server` process, which is more moving parts than a timer.
 
 Note: `systemctl is-system-running` currently reports **degraded** on this WSL.
 Something already fails at boot. Worth diagnosing before adding units, though it
@@ -319,7 +375,7 @@ should not block them.
 
 ### Details
 
-- Repository: `/mnt/f/nas-backup/kopia`, filesystem backend.
+- Repository: `/mnt/f/nas-ssd-backup`, filesystem backend.
 - Cache: `~/.cache/kopia` on **ext4**, never on `/mnt/f` — a cache on 9p defeats
   the point.
 - Source path `/mnt/nas-ssd` — mount must be up; the unit should check and fail
@@ -330,103 +386,88 @@ should not block them.
 ## Service (2) — daily NAS → Google Drive
 
 ```
-/mnt/ssd  ──backup tool──>  rclone  ──>  gdrive:nas-backup
- (local)                  (encrypted before leaving the house)
+/mnt/ssd  ──kopia snapshot──>  rclone serve webdav (localhost)  ──>  Google Drive
+ (local)                        spawned by Kopia as a subprocess      (encrypted
+                                                                        before leaving
+                                                                        the house)
 ```
 
 The offsite copy holds `.env` and `docs/CREDENTIALS.md`. It must be encrypted
-client-side — Google must never receive plaintext. Both candidate tools encrypt
-by default, so this is satisfied; do **not** additionally wrap it in an rclone
-crypt remote, which would only double the CPU cost and complicate restore.
+client-side — Google must never receive plaintext. Kopia encrypts by default, so
+this is satisfied with no extra layer. Do **not** additionally wrap it in an
+rclone `crypt` remote — that only doubles CPU cost and complicates restore for no
+gain, since rclone here is a transport, not the encryption boundary.
 
 ### Google Drive specifics
 
 - **Create your own OAuth client_id.** rclone's default is shared across
   thousands of users and will throw HTTP 403 rate-limit errors. Google Cloud
-  Console → new project → enable Drive API → OAuth credentials.
-- The NAS is headless, so the OAuth dance needs `rclone authorize "drive"` run on
-  a machine with a browser, then paste the token back. Budget for this step.
-- 15 GB free tier vs ~600 MB of data — no storage purchase needed.
+  Console → new project → enable Drive API → OAuth consent screen → OAuth
+  client ID (Desktop app).
+- **Publish the consent screen to Production**, not Testing. Left in Testing,
+  Google expires the refresh token every 7 days and the backup silently stops
+  until someone notices and re-authorizes
+  ([confirmed behavior](https://forum.rclone.org/t/rclone-google-drive-token-expires-every-week/22502) —
+  it is a Drive policy on unverified apps, not an rclone bug). Production mode
+  still shows an "unverified app" click-through warning during the one-time
+  authorization, which is expected and fine for a personal-use app under 100
+  users — full verification is not required.
+- The NAS is headless, so the OAuth dance runs on the PC:
+  `rclone authorize "drive" <client_id> <client_secret>`, then paste the printed
+  token into `rclone config` on the NAS.
+- 5 TB of paid Drive storage vs ~8 GB of data — no meaningful capacity concern.
 - Drive's 750 GB/day upload cap is irrelevant at this scale.
-
-### Open decision: tool for service (2)
-
-The reasoning is in [Why restic for service (2)](#why-restic-for-service-2) and
-[Why two tools rather than one](#why-two-tools-rather-than-one). The choice
-itself:
-
-| Option | Destination | Pro | Con |
-|---|---|---|---|
-| **A. restic + rclone** | Google Drive | maintained rclone backend; format diversity against service (1) | second tool, second restore procedure to learn |
-| **B. Kopia + native B2/R2** | Backblaze B2 or Cloudflare R2 | one tool end to end, native backend, no bridge | both copies share a repository format |
-| C. Kopia + rclone | Google Drive | one tool | rides Kopia's unmaintained WebDAV bridge |
-| D. Kopia + native gdrive | Google Drive | one tool, no rclone | **not viable on a personal account** — see below |
-| E. restic for both | Google Drive | one tool | gives up Kopia's metadata/cache edge on leg 1 |
-
-**A and B are both good; pick on what you value.** Choose **A** if the offsite
-copy must live in Google Drive — an account you already have, already pay for,
-and can browse in a web UI. Choose **B** if a single tool and a single restore
-procedure matter more than which cloud holds the blobs; it is the cleaner system.
-
-Everything else is a compromise. Decide at review — this changes only
-[stage 4](IMPLEMENTATION.md).
-
-### Why Kopia cannot reach Google Drive cleanly
-
-Worth recording, because "just use Kopia for both" is the obvious first instinct
-and it fails for non-obvious reasons.
-
-**Native Drive backend (option D) requires a Google service account**, and
-service accounts carry their own storage quota — effectively zero on a consumer
-account. Uploads fail with `storage quota exceeded` while your own Drive sits
-15 GB empty, because the service account, not you, owns the uploaded files
-([kopia#2656](https://github.com/kopia/kopia/issues/2656)). The documented fix is
-domain-wide delegation to impersonate a real user, which needs a Google Workspace
-admin. A personal Gmail account has none. This is a hard blocker, not a rough
-edge.
-
-**The rclone bridge (option C)** works by Kopia spawning `rclone serve webdav` as
-a subprocess and speaking WebDAV to it over localhost. That indirection is where
-the failures live: [`timed out waiting for rclone to
-start`](https://github.com/kopia/kopia/issues/2573), [missing WebDAV cert
-paths](https://github.com/kopia/kopia/issues/4429), [`PutBlob() failed` against
-Drive](https://github.com/kopia/kopia/issues/1698), and `sync-to` transferring
-blobs one at a time over HTTP. It works for many people; it is also the code path
-Kopia's own docs decline to maintain.
-
-**Neither problem exists on B2, R2, or any S3-compatible target**, which Kopia
-speaks natively — that is what makes option B the good version of "use Kopia for
-everything". Backblaze B2's free tier is 10 GB and Cloudflare R2's is 10 GB, both
-comfortably above this backup set, so option B costs nothing at current size.
-
-The tradeoff option B accepts: both copies become Kopia repositories, so a Kopia
-format bug could in principle affect both — the diversity argument in [Why two
-tools rather than one](#why-two-tools-rather-than-one) cuts against it. Halving
-the operational surface is a fair price for that, and a much better trade than
-routing the one off-site copy through an unmaintained bridge.
+- If `kopia snapshot create` ever fails with a timeout or connection error to
+  `127.0.0.1`, that is the WebDAV subprocess, not Drive itself — see [Why Google
+  Drive despite the rclone
+  bridge](#why-google-drive-despite-the-rclone-bridge) before assuming the
+  repository is damaged.
 
 ## Retention
 
-| | hourly | daily | weekly | monthly |
+| | latest | daily | weekly | monthly |
 |---|---|---|---|---|
-| Service (1) | 24 | 14 | 8 | 12 |
+| Service (1) | 10 | 14 | 8 | 12 |
 | Service (2) | — | 14 | 8 | 24 |
+
+Service (1) drops `--keep-hourly` — with two runs per boot rather than a
+continuous hourly cadence, an "hourly" retention bucket doesn't correspond to
+anything real. `--keep-latest 10` covers the same need (several most-recent
+snapshots for a fast, recent-history restore) without pretending to a cadence
+the timer doesn't run.
 
 Service (2) keeps a longer tail because it is the copy that answers "this got
 corrupted three months ago and nobody noticed."
+
+## No judgement calls left to make
+
+The earlier version of this plan had a section here weighing `open-webui`
+(890 MB of chat history and Chroma vector embeddings) — neither clearly
+irreplaceable nor clearly regenerable — against the old 15 GB offsite ceiling,
+and similar borderline calls for Radarr's `MediaCover/` and Jellyfin's
+`data/metadata/` (re-fetchable, but slowly and against rate-limited APIs).
+
+All three are backed up in full now, on both legs, along with everything else
+under `/mnt/ssd` that `scripts/backup/excludes.txt` doesn't name as physically
+unreadable. See [Why both legs back up
+everything](#why-both-legs-back-up-everything) — there is no remaining
+capacity constraint that would make trimming any of this worthwhile.
 
 ## Verification and restore testing
 
 A backup that has never been restored is not a backup — it is an untested
 assumption with a cron entry.
 
-- Weekly: `kopia snapshot verify` (service 1), `restic check` (service 2).
-- Monthly: `restic check --read-data-subset=5%` — actually reads blob data rather
-  than trusting the index.
-- **Quarterly, manual:** restore a snapshot to a scratch directory and open the
-  restored `radarr.db` with `sqlite3 ... "PRAGMA integrity_check"`. This is the
-  only step that proves the SQLite dump logic works end to end. It is also the
-  step most likely to get skipped — put it in the calendar, not just this doc.
+The cadences (weekly `kopia snapshot verify`, monthly with
+`--verify-files-percent=5`, quarterly full drill), the commands, and the drill
+log all live in **[RESTORE.md](RESTORE.md)** — one document rather than
+scattered across three, because verification only matters as the rehearsal for
+a restore. With one tool they are the same commands against both repositories,
+which is most of the argument for consolidating on Kopia.
+
+The quarterly drill is the only step that proves the SQLite dump logic works
+end to end, and the one most likely to get skipped. Put it in the calendar, not
+just in a doc.
 
 ## Failure notification
 
@@ -452,16 +493,22 @@ alert nobody reads is the same as no alert.
 
 Ordered by dependency:
 
-1. `scripts/backup/dump-sqlite.sh` + hourly systemd timer on the NAS; add
-   `appdata-dumps/` to `.gitignore`.
-2. Verify a dumped `radarr.db` passes `PRAGMA integrity_check` while Radarr runs.
-3. Exclusion list, shared by both services, kept in the repo as one file.
-4. Service (1): install Kopia, create repo on `/mnt/f`, policy, service + timer.
-5. Service (2): install restic + rclone, own OAuth client_id, headless authorize,
-   create repo, service + timer.
-6. `OnFailure=` handlers and Beszel alerting for both.
-7. Restore drill for each, and write the result up as `RESTORE.md` alongside this
-   file.
+1. ✅ `scripts/backup/dump-sqlite.sh` + hourly systemd timer on the NAS;
+   `appdata-dumps/` added to `.gitignore`.
+2. ✅ Verified a dumped `radarr.db` passes `PRAGMA integrity_check` while Radarr
+   runs — `ok`, 134 movies / 6 series under live writes.
+3. ✅ Exclusion list: `excludes.txt`, shared by both legs, impossibilities only
+   — applied and verified by `apply-policy.sh`.
+4. ✅ Service (1): Kopia installed, repo created on `/mnt/f`, policy applied,
+   service + timer enabled. Snapshots clean; 7.8 GB in 59 s.
+5. ⏳ Service (2): Kopia + rclone **installed on the NAS**. Remaining: own
+   OAuth client_id published to Production, headless authorize, create repo,
+   `apply-policy.sh offsite`, service + timer.
+6. ⏳ `OnFailure=` handlers and Beszel alerting for both.
+7. ⏳ Restore drill for each, and write the result up as `RESTORE.md` alongside
+   this file.
+8. ⏳ Observe service (1) firing across a real `wsl --shutdown` — the
+   `OnBootSec` path has never been watched through an actual boot. See
+   [PLAN.md](PLAN.md#verify-after-a-real-reboot).
 
-Steps 1–3 are shared groundwork and land first regardless of how the open
-decision goes.
+Steps 1–3 are shared groundwork and land first.
