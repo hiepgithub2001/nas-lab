@@ -108,8 +108,15 @@ Info** panel.
 
 ### Dual-language subtitles
 
-Jellyfin can't show two tracks at once. To display two languages together, Bazarr
-merges them into one track — see [bazarr.md → dual-language](bazarr.md#dual-language-subtitles-post-processing).
+Two ways to see two languages at once:
+
+- **Natively (10.9+)** — the player's subtitle menu has a **Secondary Subtitles**
+  picker: choose any two text tracks at playback time. Needs both tracks to be
+  text-based and delivered as external (not burned in — image PGS can't be a
+  secondary). It's a **web-client** feature; some native apps (Android TV) lack it.
+- **Pre-merged track** — Bazarr merges two `.srt` files into one `Dual EN-VI` track on
+  download, which works on every client. See
+  [bazarr.md → dual-language](bazarr.md#dual-language-subtitles-post-processing).
 
 ## Transcoding — why playback sometimes stutters
 

@@ -63,9 +63,16 @@ across broken providers just repeats the same failure.
 
 ## Dual-language subtitles (post-processing)
 
-Jellyfin can't show two subtitle tracks at once. To get e.g. English + Vietnamese
-together, `scripts/merge-subs.py` combines two `.srt` files into one **new** track. It
-**never edits the originals** — the single-language tracks stay selectable.
+> **Jellyfin 10.9+ can show two tracks at once natively** — the player's subtitle menu
+> has a **Secondary Subtitles** picker, so any two text tracks can be combined at
+> playback time, chosen by whoever is watching. That is the flexible option and it
+> needs no pre-baking. It is a **web-client** feature though: browsers yes, some native
+> apps (Android TV) no. The merge below stays useful as the fallback for those clients,
+> and it is what the Bazarr hook produces today.
+
+To get e.g. English + Vietnamese together as a single track, `scripts/merge-subs.py`
+combines two `.srt` files into one **new** track. It **never edits the originals** —
+the single-language tracks stay selectable.
 
 Deployed at `/config/scripts/merge-subs.py` (host `appdata/bazarr/scripts/`). Two
 layouts:
@@ -84,13 +91,24 @@ won't override them). To change them, edit the two `Style:` lines in
 Post-Processing**, command:
 
 ```
-python3 /config/scripts/merge-subs.py "{{subtitles}}" "{{subtitles_language_code2}}" --primary en --layout topbottom
+/config/scripts/bazarr-postprocess.sh "{{subtitles}}" "{{subtitles_language_code2}}"
 ```
 
-`{{subtitles}}` is the file Bazarr just downloaded, `{{subtitles_language_code2}}` its
-language code — Bazarr fills both in. With **no `--secondary`**, it pairs the primary
-(`en`) against **every** other language present, so one hook produces `Dual EN-VI`,
-`Dual EN-ZH`, etc. Save — no restart needed.
+Bazarr allows exactly **one** command, so it points at the wrapper, which runs
+`ai-translate-sub.py` and then `merge-subs.py`. `{{subtitles}}` is the file Bazarr just
+downloaded, `{{subtitles_language_code2}}` its language code — Bazarr fills both in.
+Save — no restart needed.
+
+The wrapper defaults to `--primary en --layout topbottom`. Anything you append after
+the two `{{...}}` arguments is forwarded verbatim to `merge-subs.py`, so the layout can
+be changed from Bazarr's UI without editing the script:
+
+```
+/config/scripts/bazarr-postprocess.sh "{{subtitles}}" "{{subtitles_language_code2}}" --primary vi --layout stacked
+```
+
+With **no `--secondary`**, it pairs the primary against **every** other language
+present, so one hook produces `Dual EN-VI`, `Dual EN-ZH`, etc.
 
 **Requirements and gotchas:**
 
@@ -106,6 +124,13 @@ language code — Bazarr fills both in. With **no `--secondary`**, it pairs the 
   then refresh that item's metadata in Jellyfin so the new track appears.
 - Bazarr's Chinese codes (`zt` Traditional, `zs` Simplified) are handled — they map to
   `zh` automatically.
+- The script **ignores its own output** when scanning for languages to pair. It has to:
+  a `stacked` run writes `<stem>.Dual EN-VI.eng.srt`, which otherwise reads back as a
+  plain English track and — being unflagged — outranks a real `.en.hi.srt`, so the next
+  run would merge a Dual file into a new one and duplicate the secondary language.
+- If both languages appear at the bottom in the **same colour**, you got a `stacked`
+  `.srt` rather than a `topbottom` `.ass` — the layout flags never reached the script.
+  Check the Bazarr command above, then regenerate by hand.
 
 ## No authentication by default
 

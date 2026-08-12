@@ -181,6 +181,13 @@ SUB_SUFFIX_RE = re.compile(
 )
 
 
+# Our own output lands next to the sources and ends ".<primary3>.srt", so the
+# sibling scans below would happily read it back as a plain English track — and,
+# being unflagged, it outranks a real ".en.hi.srt". A second run would then merge
+# a Dual file into a new one, duplicating the secondary language. Skip our own.
+DUAL_RE = re.compile(r"\.Dual [A-Za-z]{2}-[A-Za-z]{2}\b", re.I)
+
+
 def stem_of(path):
     """Strip the trailing .<lang>.srt (and any .hi/.forced/.sdh flag)."""
     return SUB_SUFFIX_RE.sub("", os.path.basename(path))
@@ -195,7 +202,7 @@ def find_counterpart(sub_path, want):
     alt = "|".join(re.escape(a) for a in aliases)
     best = None
     for f in os.listdir(directory):
-        if not f.lower().endswith(".srt") or f == base:
+        if not f.lower().endswith(".srt") or f == base or DUAL_RE.search(f):
             continue
         if not f.startswith(stem):
             continue
@@ -216,6 +223,8 @@ def sibling_languages(sub_path):
     found = {}
     for f in os.listdir(directory):
         if not f.lower().endswith(".srt") or f == base or not f.startswith(stem):
+            continue
+        if DUAL_RE.search(f):
             continue
         m = SUB_SUFFIX_RE.search(f)
         if not m:
