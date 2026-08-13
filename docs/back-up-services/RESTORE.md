@@ -68,6 +68,22 @@ kopia repository connect rclone --remote-path gdrive:nas-ssd-backup
 > [QUICK-START.md](QUICK-START.md#a-one-time-google-cloud-setup-manual-in-a-browser)
 > step A. **Put those in the password manager next to the repo passwords** — if
 > they are lost too, the offsite copy is unreachable even though it is intact.
+>
+> Rebuilding the remote on a fresh machine, given those two values:
+>
+> ```bash
+> rclone authorize "drive" "<client_id>" "<client_secret>"   # needs a browser
+> rclone config      # remote name: gdrive; paste client id/secret + the token
+> rclone lsd gdrive: # must list nas-ssd-backup before kopia will work
+> chmod 700 ~/.config/rclone
+> ```
+>
+> If the client ID and secret are also lost, they can be recreated in the
+> Google Cloud Console from the same account that owns the Drive — the
+> repository itself is unaffected either way. What cannot be recreated is the
+> **repository password**. See [Credentials — where they live and what uses
+> them](QUICK-START.md#credentials--where-they-live-and-what-uses-them) for the
+> full inventory.
 
 ## Step 1 — find the snapshot
 

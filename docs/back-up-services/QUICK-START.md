@@ -459,9 +459,93 @@ is no user either leg can run as that can read a `0600 root:root` file.
 | `repository create s3`-style errors mentioning bucket access (if this ever migrates to B2/R2) | Application key missing `listBuckets` capability | See [kopia#5329](https://github.com/kopia/kopia/issues/5329) |
 | Restored `.db` won't open / app shows missing data | Restored the live `.db` instead of the dump, or left a stale `-wal` next to it | Use `appdata-dumps/current/*.dump`, and delete `-wal`/`-shm` after restoring |
 
-### Passwords
+### Credentials — where they live and what uses them
 
-Two independent Kopia repository passwords exist — one per host — stored in
-`~/.config/kopia/env` on each machine. **Neither lives in this repository or in
-`.env`.** Both must also live in a password manager off these two machines; a
-password that only exists on the machine that just died is not a backup.
+Four distinct secrets are involved, in two categories: **repository passwords**
+(decrypt the backups) and **Google OAuth credentials** (reach the Drive
+account). None of them are in this git repository, in `.env`, or in any
+compose file.
+
+| Secret | Stored at | Perms | Used by |
+|---|---|---|---|
+| Service (1) repo password | `~/.config/kopia/env` on the **PC** | `600` | `kopia` on every repo access |
+| Service (2) repo password | `~/.config/kopia/env` on the **NAS** | `600` | `kopia` on every repo access |
+| OAuth client ID + secret | `~/.config/rclone/rclone.conf` on the **NAS** | `600` | `rclone` when talking to Drive |
+| OAuth access + refresh token | same file, `token =` line | `600` | `rclone`, auto-refreshed hourly |
+
+Both parent directories are `700`. Worth checking after any restore or manual
+edit — `rclone config` creates `~/.config/rclone/` as `775` by default, which
+leaves it group- and world-traversable:
+
+```bash
+chmod 700 ~/.config/kopia ~/.config/rclone
+ls -lad ~/.config/kopia ~/.config/rclone      # both should read drwx------
+```
+
+**The repo password exists in two files, not one.** Besides `env`, Kopia
+persists it to `~/.config/kopia/repository.config.kopia-password` when it
+connects, so it can run unattended from a timer without the password in the
+environment. Deleting `env` therefore does *not* lock anyone out of the
+repository on that host; only removing both files does. Treat the whole
+`~/.config/kopia/` directory as secret material.
+
+#### How they chain together on an offsite run
+
+```
+~/.config/kopia/env              ~/.config/rclone/rclone.conf
+   KOPIA_PASSWORD                   client_id / client_secret / token
+        │                                      │
+        v                                      v
+ snapshot-offsite.sh ──> kopia ──spawns──> rclone serve webdav ──> Google Drive
+        (sources env)     encrypts            authenticates          receives
+                          client-side         to the account         only blobs
+```
+
+The split matters: **rclone never sees your data unencrypted, and Kopia never
+sees your Google account.** Kopia encrypts with the repo password before
+anything is handed to rclone; rclone authenticates to Drive and moves opaque
+blobs. Compromising the Drive account exposes no backup content — it would take
+the repo password too. That's why there is no reason to add an rclone `crypt`
+remote on top.
+
+#### What the timer needs at 03:59, unattended
+
+`nas-offsite.service` runs as `User=1001` with no interactive session, so
+everything must be on disk and readable by that user:
+
+- `~/.config/kopia/env` — sourced by the script itself.
+- `~/.config/kopia/repository.config*` — connection + persisted password.
+- `~/.config/rclone/rclone.conf` — Kopia spawns `rclone` as a child, which
+  reads this from the same `$HOME`.
+
+If the offsite run starts failing with auth errors, check those three before
+suspecting the network. A common cause is running the setup as one user and the
+timer as another, so the timer's `$HOME` has no `rclone.conf` in it.
+
+#### Off-machine copies — the part that actually matters
+
+Both repository passwords **must** live in a password manager off these two
+machines. They are unrecoverable: not tied to any account, no reset, no
+support channel. A password that exists only on the machine that just died is
+not a backup — see [PLAN.md](PLAN.md#secrets--why-kopia_pw-matters).
+
+Store the **OAuth client ID and secret** there too. They aren't secret in the
+same way — losing them costs an afternoon in the Google Cloud Console rather
+than your data — but a disaster restore needs them before it can reach Drive
+at all, and re-deriving them while rebuilding is the worst time to do it.
+
+The tokens need no backup: they're re-obtained by re-running `rclone
+authorize`, given the client ID and secret.
+
+#### Rotating a credential
+
+- **OAuth token expired or revoked** (offsite backups suddenly failing auth):
+  re-run step B's `rclone authorize` on a machine with a browser, paste the
+  result into `rclone config` on the NAS. The repository is untouched.
+- **Repo password**: `kopia repository change-password`. Update
+  `~/.config/kopia/env` on that host in the same sitting, then the password
+  manager. Old snapshots stay readable — the password protects a key, and the
+  key itself doesn't change.
+- **Whole Google account compromised**: revoke the app under the Google
+  account's third-party access, create a new OAuth client, re-authorize. The
+  backup content was never exposed in plaintext.
