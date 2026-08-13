@@ -1,3 +1,10 @@
+# Explicit project name, matching what Compose already derives from the
+# directory. It matters because docker-compose.cloud.yml sits in this same
+# directory: without a name of its own each file would claim the project
+# `nas-lab`, and either stack's `--remove-orphans` would delete the other's
+# containers. That file declares `name: nas-cloud`.
+name: nas-lab
+
 # Container logs default to json-file with no size limit, which grows unbounded
 # until it fills the WSL ext4 root. Cap every service at 30 MB (3 x 10 MB).
 x-logging: &default-logging

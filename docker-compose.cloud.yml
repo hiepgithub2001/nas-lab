@@ -1,0 +1,161 @@
+# Personal cloud stack — Immich (photos) and Nextcloud (files, calendar,
+# contacts). Runs on the NAS alongside docker-compose.yml, but as a **separate
+# Compose project**, so restarting the media stack never takes photos offline.
+#
+# The `name:` below is not cosmetic. Compose derives the project name from the
+# directory, which is `nas-lab` for both files. Without an explicit name both
+# stacks would claim the same project, and each would see the other's
+# containers as orphans — one `docker compose --remove-orphans` would delete
+# the other stack. `docker-compose.yml` carries a matching `name: nas-lab`.
+#
+#   docker compose -f docker-compose.cloud.yml up -d
+#
+# Storage is split deliberately across the two disks:
+#   /mnt/ssd (${CONFIG_ROOT})  — Postgres data, Nextcloud app+config. Random I/O.
+#   /mnt/hdd (${CLOUD_DATA_ROOT}) — photo originals and user files. Bulk, 8.2 TB.
+#
+# See docs/cloud-services/README.md.
+name: nas-cloud
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # --- Immich: photos and video ------------------------------------------
+  # Image tags, including the two digest pins below, are taken verbatim from
+  # the upstream release compose file. Immich's server and its database are
+  # version-locked — the Postgres image ships the VectorChord extension at a
+  # specific version that the server expects — so do not bump one alone. Pull
+  # a fresh pair from:
+  #   https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION}
+    container_name: immich-server
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+      - DB_HOSTNAME=immich-postgres
+      - DB_USERNAME=immich
+      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
+      - DB_DATABASE_NAME=immich
+      - REDIS_HOSTNAME=immich-redis
+    volumes:
+      # Immich treats this as one tree: upload/, library/, thumbs/,
+      # encoded-video/, profile/. It moves files between upload/ and library/
+      # by rename, which is not atomic across filesystems — so the whole tree
+      # stays on one disk. That means the thumbnails live on the HDD with the
+      # originals rather than on the SSD; splitting them out is not supported.
+      - ${CLOUD_DATA_ROOT}/immich:/data
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - immich-postgres
+      - immich-redis
+    ports:
+      - 2283:2283
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION}
+    container_name: immich-machine-learning
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - TZ=${TZ}
+    volumes:
+      # Named volume, not a bind: this is a download cache for CLIP and face
+      # recognition models, regenerable from the internet. It stays out of
+      # appdata/ so it stays out of the backup.
+      - immich-model-cache:/cache
+
+  immich-redis:
+    image: docker.io/valkey/valkey:9@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
+    container_name: immich-redis
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+  immich-postgres:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    container_name: immich-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - POSTGRES_USER=immich
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASSWORD}
+      - POSTGRES_DB=immich
+      - POSTGRES_INITDB_ARGS=--data-checksums
+    volumes:
+      # SSD, and local disk only — Immich does not support the database on a
+      # network share. This directory is 0700 uid 999 and is excluded from the
+      # Kopia snapshot; scripts/backup/dump-postgres.sh backs it up instead.
+      - ${CONFIG_ROOT}/immich/postgres:/var/lib/postgresql/data
+    shm_size: 128mb
+
+  # --- Nextcloud: files, calendar, contacts -------------------------------
+  # The LinuxServer image rather than the official one, for a specific reason:
+  # the official image runs as www-data and creates the data directory 0770
+  # www-data:www-data, which uid 1001 cannot read. Kopia treats an unreadable
+  # entry as a fatal error, so the backup unit would fail on every run and
+  # your files would never be backed up at all. PUID/PGID makes everything
+  # 1001-owned and readable, and matches every other service in this repo.
+  nextcloud:
+    image: lscr.io/linuxserver/nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/nextcloud/config:/config
+      - ${CLOUD_DATA_ROOT}/nextcloud:/data
+    depends_on:
+      - nextcloud-postgres
+      - nextcloud-redis
+    ports:
+      # 8080 is qBittorrent's, 8081 is free. Tailscale serve fronts this with
+      # HTTPS on the tailnet; see docs/cloud-services/README.md.
+      - 8081:443
+
+  nextcloud-postgres:
+    # Major version pinned on purpose. Postgres will not start against a data
+    # directory written by a different major, and `latest` would silently
+    # become that breakage on some future pull. Moving majors means pg_upgrade,
+    # deliberately, not a restart.
+    image: postgres:18-alpine
+    container_name: nextcloud-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD}
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - TZ=${TZ}
+    volumes:
+      # /var/lib/postgresql, NOT /var/lib/postgresql/data — and that is not a
+      # typo against immich-postgres above, which mounts the older path. The
+      # official image changed the convention in 18: the mount goes one level
+      # up and the cluster lands in a version-named subdirectory
+      # (18/docker/), so that a future pg_upgrade --link has both majors inside
+      # one mount point. Immich's database image is built on Postgres 14 and
+      # still wants the old path. Mounting 18 the old way makes it refuse to
+      # start, which is how this was found.
+      - ${CONFIG_ROOT}/nextcloud/postgres:/var/lib/postgresql
+
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    logging: *default-logging
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+volumes:
+  immich-model-cache:

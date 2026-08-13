@@ -13,6 +13,7 @@ there. The rest of this README is the detailed reference behind those steps.
 | [Quickstart](docs/QUICKSTART.md) | Get it running: after a reboot, or from scratch |
 | [User Guide](docs/user-guide/) | Daily use — one page per service (Radarr, Sonarr, qBittorrent, Prowlarr, Bazarr, Jellyfin) |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Watching away from home via Tailscale |
+| [Personal cloud](docs/cloud-services/README.md) | Immich (photos) and Nextcloud (files) — storage layout, Postgres backups, Tailscale HTTPS |
 | [Transcoding](docs/technical/TRANSCODING.md) | GPU transcode/encode/decode, Direct Play vs transcode |
 | [FFmpeg](docs/technical/FFMPEG.md) | The engine underneath: reading its commands, logs, exit codes, and testing it directly |
 | [GPU passthrough](docs/technical/GPU-WSL-PASSTHROUGH.md) | How the GPU reaches Jellyfin across Windows → WSL → container, and the two ways it breaks |
@@ -35,18 +36,25 @@ there. The rest of this README is the detailed reference behind those steps.
    files alongside it.
 6. **Jellyfin** serves the organized `/data/media` library for playback.
 
-## Two stacks, two machines
+## Three stacks, two machines
 
 Since 2026-08-10 this repo drives two hosts from one checkout, which lives on the
 NAS at `/mnt/ssd/nas-lab` (reachable from the PC at `/mnt/nas-ssd/nas-lab` over
-NFS). Edit it in one place; both stacks read the same files.
+NFS). Edit it in one place; all stacks read the same files.
 
-| | `docker-compose.yml` | `docker-compose.gpu.yml` |
-|---|---|---|
-| Runs on | **NAS** (`ubuntu-2404`) | **PC** (WSL, RTX 4080 Super) |
-| Services | jellyfin, radarr, sonarr, prowlarr, bazarr, qbittorrent, recyclarr, beszel | ollama, open-webui, vn-dub-\* |
-| Power state | always on | on only when needed |
-| Restart policy | `unless-stopped` | **`"no"` — manual** |
+| | `docker-compose.yml` | `docker-compose.cloud.yml` | `docker-compose.gpu.yml` |
+|---|---|---|---|
+| Project name | `nas-lab` | `nas-cloud` | `nas-lab` |
+| Runs on | **NAS** (`ubuntu-2404`) | **NAS** (`ubuntu-2404`) | **PC** (WSL, RTX 4080 Super) |
+| Services | jellyfin, radarr, sonarr, prowlarr, bazarr, qbittorrent, recyclarr, beszel | immich, nextcloud | ollama, open-webui, vn-dub-\* |
+| Power state | always on | always on | on only when needed |
+| Restart policy | `unless-stopped` | `unless-stopped` | **`"no"` — manual** |
+
+The two NAS stacks share a host but not a project, so restarting the media stack
+never touches the photo library. That separation depends on the explicit `name:`
+in each file — Compose otherwise names the project after the directory, both
+would answer to `nas-lab`, and either stack's `--remove-orphans` would delete the
+other's containers. See [Personal cloud](docs/cloud-services/README.md).
 
 The GPU services are the only ones that need CUDA: `qwen3:8b` runs at 101 tok/s on
 the 4080 versus roughly 5-10 tok/s on CPU, and VoxCPM2 will not start without it.
