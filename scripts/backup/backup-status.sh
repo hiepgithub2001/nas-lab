@@ -115,10 +115,17 @@ report_live_leg() {
   fi
 
   # in-flight
+  #
+  # Match the kopia BINARY (-x kopia), not any command line containing the
+  # string "kopia snapshot create" (-f). A plain `pgrep -f` also matches shells
+  # and scripts that merely mention it — including this script and any wrapper
+  # waiting on it — which reports a phantom snapshot in progress, and then
+  # computes rate and ETA from that wrapper's runtime against a stale log.
+  # Observed 2026-08-13: a leftover wait-loop shell reported as a 6h snapshot.
   local src; src=$(du -sb "$root/nas-lab" 2>/dev/null | cut -f1)
-  if pgrep -f "kopia snapshot create" >/dev/null 2>&1; then
+  if pgrep -x kopia 2>/dev/null | grep -q .; then
     local pid el log n raw rate eta errs
-    pid=$(pgrep -f "kopia snapshot create" | head -1)
+    pid=$(pgrep -x kopia | head -1)
     el=$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')
     ok "snapshot IN PROGRESS (pid $pid, ${el:-0}s elapsed)"
     log=$(ls -t ~/.cache/kopia/cli-logs/*snapshot-create*.log 2>/dev/null | head -1)
