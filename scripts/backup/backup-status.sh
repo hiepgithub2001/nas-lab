@@ -116,19 +116,36 @@ report_live_leg() {
 
   # in-flight
   #
-  # Match the kopia BINARY (-x kopia), not any command line containing the
-  # string "kopia snapshot create" (-f). A plain `pgrep -f` also matches shells
-  # and scripts that merely mention it — including this script and any wrapper
-  # waiting on it — which reports a phantom snapshot in progress, and then
-  # computes rate and ETA from that wrapper's runtime against a stale log.
-  # Observed 2026-08-13: a leftover wait-loop shell reported as a 6h snapshot.
+  # Two false positives to avoid here, and they pull in opposite directions:
+  #
+  #   pgrep -f 'kopia snapshot create'  also matches shells and wrappers that
+  #     merely mention the string — including this script — and then computes
+  #     rate and ETA from the wrapper's runtime. Observed 2026-08-13: a
+  #     leftover wait-loop shell reported as a 6h snapshot.
+  #   pgrep -x kopia                    matches the binary, but ANY subcommand
+  #     of it: `kopia mount`, `kopia server start`, `kopia snapshot list`.
+  #     Observed 2026-08-13: a leftover `kopia mount` from a restore drill
+  #     reported as "snapshot IN PROGRESS ... 40KB/s, eta ~3565m", with the
+  #     numbers scraped from an already-finished run's log.
+  #
+  # So: match the binary with -x, then confirm from /proc that this particular
+  # process really is a `snapshot create`.
   local src; src=$(du -sb "$root/nas-lab" 2>/dev/null | cut -f1)
-  if pgrep -x kopia 2>/dev/null | grep -q .; then
-    local pid el log n raw rate eta errs
-    pid=$(pgrep -x kopia | head -1)
+  local pid="" _p
+  for _p in $(pgrep -x kopia 2>/dev/null); do
+    if tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | grep -q 'snapshot create'; then
+      pid="$_p"; break
+    fi
+  done
+  if [ -n "$pid" ]; then
+    local el log n raw rate eta errs
     el=$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ')
     ok "snapshot IN PROGRESS (pid $pid, ${el:-0}s elapsed)"
-    log=$(ls -t ~/.cache/kopia/cli-logs/*snapshot-create*.log 2>/dev/null | head -1)
+    # Prefer the log belonging to THIS pid — kopia embeds it in the filename
+    # (kopia-<date>-<pid>-snapshot-create.0.log) — so the byte counts can never
+    # be read from a run that already finished. Fall back to newest if absent.
+    log=$(ls -t ~/.cache/kopia/cli-logs/*-"$pid"-snapshot-create*.log 2>/dev/null | head -1)
+    [ -n "$log" ] || log=$(ls -t ~/.cache/kopia/cli-logs/*snapshot-create*.log 2>/dev/null | head -1)
     if [ -n "$log" ]; then
       n=$(grep -c PutBlob "$log" 2>/dev/null)
       raw=$(grep PutBlob "$log" 2>/dev/null | sed -n 's/.*"length":\([0-9]*\).*/\1/p' \
