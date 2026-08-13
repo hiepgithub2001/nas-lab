@@ -12,6 +12,7 @@ ROOT="${1:?usage: guard-source.sh <snapshot-root>}"
 MAX_AGE=7200   # 2h — dumps run hourly at :50
 
 STAMP="$ROOT/nas-lab/appdata-dumps/current/.stamp"
+PG_STAMP="$ROOT/nas-lab/appdata-dumps/postgres/current/.stamp"
 
 # On the PC the root is an NFS mount; if it is not mounted the directory still
 # exists and is empty, which is exactly the silent failure this guards against.
@@ -27,3 +28,20 @@ age=$(( $(date +%s) - $(stat -c %Y "$STAMP") ))
   echo "dump set is ${age}s old (>${MAX_AGE}s) — dump-sqlite has stalled" >&2
   exit 1
 }
+
+# The Postgres dump set, same rule. Checked only once the directory exists, so
+# this guard keeps working on a host that has never run the cloud stack. Once
+# Immich and Nextcloud are installed the directory is permanent, and staleness
+# becomes an error from then on — the live database directories are excluded
+# from the snapshot, so a stale dump set means the photos have no backup at all.
+if [ -d "$ROOT/nas-lab/appdata-dumps/postgres" ]; then
+  [ -f "$PG_STAMP" ] || {
+    echo "no Postgres dump set at $PG_STAMP — is dump-postgres.timer running?" >&2
+    exit 1
+  }
+  pg_age=$(( $(date +%s) - $(stat -c %Y "$PG_STAMP") ))
+  [ "$pg_age" -lt "$MAX_AGE" ] || {
+    echo "Postgres dump set is ${pg_age}s old (>${MAX_AGE}s) — dump-postgres has stalled" >&2
+    exit 1
+  }
+fi

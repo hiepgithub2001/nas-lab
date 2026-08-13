@@ -138,6 +138,26 @@ qBittorrent is the exception — no SQLite. Its state is `BT_backup/` (`.torrent
 `.fastresume` per torrent) plus `qBittorrent.conf`, which are ordinary files and
 copy safely. Exclude its `ipc-socket`, `lockfile`, `logs/` and `GeoDB/`.
 
+### The same problem, harder: Postgres
+
+Added 2026-08-13 with the cloud stack. Immich and Nextcloud store their state in
+Postgres, and the live data directory is worse than a live SQLite file on two
+counts. It is `0700` owned by uid 999, the container's `postgres` user — which
+**neither leg can read**, service (2) running as 1001 on the NAS and the NFS
+export squashing every client UID including root to 1001 for service (1). Kopia
+counts an unreadable entry as a fatal error, so leaving it in the snapshot fails
+the unit on every run. And a file-level copy of a running cluster carries torn
+pages and a WAL from a different moment; it would not restore even if readable.
+
+Same shape of fix, different tool: `scripts/backup/dump-postgres.sh` runs
+`pg_dump --clean --if-exists | gzip` through `docker exec`, hourly at **:45**,
+publishing atomically to `appdata-dumps/postgres/current/` with its own
+`.stamp`. The live directories are excluded; `guard-source.sh` enforces the same
+two-hour staleness rule against that stamp once the directory exists.
+
+Full detail, including restore commands, is in
+[docs/cloud-services/README.md](../cloud-services/README.md#backups--read-this-before-trusting-the-setup).
+
 ## The tool landscape
 
 Backup tools fall into four families, and picking the wrong *family* costs more

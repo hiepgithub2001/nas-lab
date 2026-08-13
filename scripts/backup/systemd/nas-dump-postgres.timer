@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly cloud-stack Postgres dump
+
+[Timer]
+# :45, ahead of the SQLite dump at :50, so both sets are fresh together well
+# before either backup leg fires.
+OnCalendar=*:45
+Persistent=true
+
+[Install]
+WantedBy=timers.target

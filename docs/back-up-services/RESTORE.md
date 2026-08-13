@@ -240,6 +240,41 @@ vn-dubbing__dubbing.sqlite3.dump
 Confirm the app comes up clean — library present, quality profiles intact —
 before believing the restore.
 
+## Step 3b — restore a Postgres-backed app (Immich, Nextcloud)
+
+The cloud stack's databases are not SQLite and are **not** in the snapshot as
+live files — their data directories are excluded, being unreadable `0700` uid
+999 (see the backup [README](README.md#the-same-problem-harder-postgres)). The
+only copy is the gzipped `pg_dump` set:
+
+```bash
+kopia snapshot restore <ID>/nas-lab/appdata-dumps/postgres/current /tmp/restore/pg
+ls /tmp/restore/pg          # immich.sql.gz  nextcloud.sql.gz
+```
+
+Start only the database, load the dump, then bring up the rest:
+
+```bash
+cd /mnt/ssd/nas-lab
+docker compose -f docker-compose.cloud.yml up -d immich-postgres
+zcat /tmp/restore/pg/immich.sql.gz \
+  | docker exec -i immich-postgres psql --username=immich --dbname=immich
+docker compose -f docker-compose.cloud.yml up -d
+```
+
+The dumps carry `--clean --if-exists`, so they drop and recreate their own
+objects and restore cleanly over a non-empty database. Nextcloud is identical
+with `nextcloud.sql.gz`, user `nextcloud`, database `nextcloud`.
+
+> **The database is only half of it.** Immich's rows point at files under
+> `/mnt/hdd/cloud/immich`, and Nextcloud's index points at
+> `/mnt/hdd/cloud/nextcloud`. Both trees are on the HDD, and **neither backup
+> leg covers `/mnt/hdd`** — the snapshot roots are `/mnt/ssd` on the NAS and the
+> NFS mount on the PC. Restoring these dumps onto a machine that lost the HDD
+> gives you a working app listing files that are gone. Closing that gap is a
+> tracked open item in
+> [docs/cloud-services/README.md](../cloud-services/README.md#backups--read-this-before-trusting-the-setup).
+
 ## Disaster scenarios
 
 ### The NAS died, the PC is fine

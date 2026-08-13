@@ -1,0 +1,9 @@
+[Unit]
+Description=Dump cloud-stack Postgres databases into a consistent dump set
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=1001
+ExecStart=/mnt/ssd/nas-lab/scripts/backup/dump-postgres.sh

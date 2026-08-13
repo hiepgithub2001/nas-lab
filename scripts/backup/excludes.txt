@@ -29,6 +29,15 @@ lost+found/
 # re-registering agents against the new public key: an annoyance, not data loss.
 nas-lab/appdata/beszel/data/id_ed25519
 
+# Live Postgres data directories, 0700 uid 999 (the container's postgres user).
+# Unreadable by 1001 on both legs, so leaving them in fails the unit outright.
+# They would be worthless even if readable: a file-level copy of a running
+# cluster has torn pages and a WAL from another moment. The real backup is
+# appdata-dumps/postgres/current/, written hourly by dump-postgres.sh, and it
+# is what RESTORE.md restores from.
+nas-lab/appdata/immich/postgres/
+nas-lab/appdata/nextcloud/postgres/
+
 # --- Not regular files: nothing to store, nothing to restore ---
 #
 # Kopia's global policy has "ignore unknown types: true" and would skip these
@@ -47,3 +56,5 @@ nas-lab/appdata/qbittorrent/qBittorrent/lockfile
 # SQLite-backed app.
 nas-lab/appdata-dumps/.staging.*
 nas-lab/appdata-dumps/.old
+nas-lab/appdata-dumps/postgres/.staging.*
+nas-lab/appdata-dumps/postgres/.old
