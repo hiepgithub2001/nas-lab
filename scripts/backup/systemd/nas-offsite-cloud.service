@@ -1,0 +1,13 @@
+[Unit]
+Description=Service (2a) — snapshot /mnt/hdd/cloud to Google Drive (hdd-cloud-bk)
+Documentation=file:///mnt/ssd/nas-lab/docs/back-up-services/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=1001
+ExecStart=/mnt/ssd/nas-lab/scripts/backup/snapshot-offsite-cloud.sh
+# Photos are the priority leg; give a slow uplink room rather than killing a
+# run that is making progress.
+TimeoutStartSec=12h

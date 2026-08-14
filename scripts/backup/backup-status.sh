@@ -75,6 +75,30 @@ if [ "$HERE" = offsite ]; then
                      || bad "nas-dump-sqlite.timer is $t"
 fi
 
+# Postgres dumps — same rule, separate set. Checked only once the directory
+# exists, so a host without the cloud stack still reports clean. Without this
+# block the script reported "All checks passed" while dump-postgres could be
+# dead and Immich's database silently unprotected: the live cluster is excluded
+# from the snapshot, so a stale dump set means no database backup at all.
+PG_STAMP="$ROOT/nas-lab/appdata-dumps/postgres/current/.stamp"
+if [ -d "$ROOT/nas-lab/appdata-dumps/postgres" ]; then
+  head_ "Postgres dumps — Immich and Nextcloud, live clusters are excluded"
+  if [ ! -f "$PG_STAMP" ]; then
+    bad "no dump set at $PG_STAMP — nas-dump-postgres.timer has never run"
+  else
+    age=$(( $(date +%s) - $(stat -c %Y "$PG_STAMP") ))
+    human="$((age/60))m"; [ "$age" -ge 3600 ] && human="$((age/3600))h$(((age%3600)/60))m"
+    n=$(ls -1 "$(dirname "$PG_STAMP")"/*.sql.gz 2>/dev/null | wc -l)
+    if [ "$age" -lt 7200 ]; then ok "$n dumps, $human old (guard allows <2h)"
+    else bad "dump set is $human old (>2h) — both guards will refuse to snapshot"; fi
+  fi
+  if [ "$HERE" = offsite ]; then
+    t=$(systemctl is-enabled nas-dump-postgres.timer 2>&1)
+    [ "$t" = enabled ] && ok "nas-dump-postgres.timer enabled" \
+                       || bad "nas-dump-postgres.timer is $t"
+  fi
+fi
+
 # --- per-leg report ----------------------------------------------------------
 report_live_leg() {
   local leg="$1" root dest svc tmr
@@ -247,6 +271,52 @@ for leg in local offsite; do
   echo; rule; printf '\033[1m%s\033[0m\n' "$(leg_title "$leg")"; rule
   if [ "$leg" = "$HERE" ]; then report_live_leg "$leg"; else report_remote_leg "$leg"; fi
 done
+
+# --- /mnt/hdd legs -----------------------------------------------------------
+# Separate repositories, separate Drive folders, separate timers — so they are
+# reported separately rather than folded into the two legs above. The two legs
+# above protect /mnt/ssd (configuration and databases); these protect the files
+# those databases describe. Both halves are needed for a working restore.
+echo; rule; printf '\033[1m%s\033[0m\n' "/mnt/hdd — photos, files and media"; rule
+
+report_hdd_leg() {
+  local leg="$1" desc="$2" timer="$3" max_age_h="$4"
+  local f="$ROOT/nas-lab/.backup-state/$leg.state"
+  info "$desc"
+  if [ ! -f "$f" ]; then
+    warn "$leg has never run"
+    return
+  fi
+  local result exit_code finished_at finished_human duration age
+  # shellcheck disable=SC1090
+  result=$(sed -n 's/^result=//p' "$f"); exit_code=$(sed -n 's/^exit=//p' "$f")
+  finished_at=$(sed -n 's/^finished_at=//p' "$f")
+  finished_human=$(sed -n 's/^finished_human=//p' "$f")
+  duration=$(sed -n 's/^duration_s=//p' "$f")
+  age=$(( ($(date +%s) - ${finished_at:-0}) / 60 ))
+  if [ "$result" = ok ]; then ok "last run succeeded (exit $exit_code)"
+  else bad "last run FAILED (exit $exit_code)"; fi
+  info "finished:  $finished_human  (${age}m ago)"
+  [ -n "$duration" ] && info "took:      ${duration}s"
+  [ "$age" -gt $((max_age_h*60)) ] && warn "no successful run in $((age/60))h — expected within ${max_age_h}h"
+  if [ -n "$timer" ] && [ "$HERE" = offsite ]; then
+    local t; t=$(systemctl is-enabled "$timer" 2>&1)
+    [ "$t" = enabled ] && ok "$timer enabled" || bad "$timer is $t"
+  fi
+}
+
+report_hdd_leg offsite-cloud \
+  "(2a) /mnt/hdd/cloud -> gdrive:hdd-cloud-bk   — priority leg, photos and files" \
+  nas-offsite-cloud.timer 26
+
+echo
+report_hdd_leg offsite-film \
+  "(2b) /mnt/hdd/film-data -> gdrive:film-data-bk   — runs only after (2a) succeeds" \
+  nas-offsite-film.timer 26
+
+echo
+info "(1b) /mnt/nas-hdd/cloud -> /mnt/f/hdd-cloud-bk   — NOT YET ACTIVE"
+info "     needs the /mnt/hdd NFS export and a PC-side mount; see README"
 
 echo
 if [ "$PROBLEMS" -eq 0 ]; then printf '\033[32mAll checks passed.\033[0m\n'

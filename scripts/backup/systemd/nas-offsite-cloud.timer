@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily photo/file backup to Google Drive (service 2a)
+
+[Timer]
+# 04:30, after the SSD leg at 03:32 so the two are not competing for the uplink.
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

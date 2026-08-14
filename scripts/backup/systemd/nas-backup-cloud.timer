@@ -1,0 +1,13 @@
+[Unit]
+Description=Local photo/file backup, twice per WSL boot (service 1b)
+
+[Timer]
+# Mirrors nas-backup.timer's shape: WSL has no reliable wall-clock schedule
+# because the machine is not always on, so this fires relative to boot rather
+# than at a fixed hour. 20min lets the NFS mount settle first.
+OnBootSec=20min
+OnUnitActiveSec=1h
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

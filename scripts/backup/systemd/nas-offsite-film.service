@@ -1,0 +1,14 @@
+[Unit]
+Description=Service (2b) — snapshot /mnt/hdd/film-data to Google Drive (film-data-bk)
+Documentation=file:///mnt/ssd/nas-lab/docs/back-up-services/README.md
+After=network-online.target nas-offsite-cloud.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=1001
+ExecStart=/mnt/ssd/nas-lab/scripts/backup/snapshot-offsite-film.sh
+# The first run uploads ~915 GB. Kopia checkpoints as it goes and a later run
+# resumes rather than restarting, but do not let systemd kill a run that is
+# still making progress — hence effectively no deadline.
+TimeoutStartSec=infinity

@@ -158,6 +158,98 @@ two-hour staleness rule against that stamp once the directory exists.
 Full detail, including restore commands, is in
 [docs/cloud-services/README.md](../cloud-services/README.md#backups--read-this-before-trusting-the-setup).
 
+## /mnt/hdd — the second disk, added 2026-08-14
+
+Everything above concerns `/mnt/ssd`: configuration and databases, ~8 GB. The
+HDD holds the data those databases *describe* — the Immich photo library,
+Nextcloud user files, and the media library — and until this was added it had
+no backup at all. Restoring the SSD alone gives you a working Immich that lists
+every photo you own and can display none of them.
+
+Three legs, in priority order. Photos before media, deliberately: film-data can
+be re-acquired, photos cannot.
+
+| | Source | Destination | Frequency | Status |
+|---|---|---|---|---|
+| **(2a)** | `/mnt/hdd/cloud` | `gdrive:hdd-cloud-bk` | daily 04:30 | **live** |
+| **(2b)** | `/mnt/hdd/film-data` | `gdrive:film-data-bk` | daily 05:30, after (2a) | **live** |
+| **(1b)** | `/mnt/nas-hdd/cloud` | PC `/mnt/f/hdd-cloud-bk` | per WSL boot | **not active** |
+
+### Three repositories, not one
+
+Each destination folder on Drive is its own Kopia repository. Kopia connects
+**one repository per config file**, so the default
+`~/.config/kopia/repository.config` stays bound to the SSD repo and the new legs
+pass `--config-file` explicitly:
+
+```
+~/.config/kopia/repository.config   gdrive:nas-ssd-backup   (SSD, unchanged)
+~/.config/kopia/hdd-cloud.config    gdrive:hdd-cloud-bk
+~/.config/kopia/film-data.config    gdrive:film-data-bk
+```
+
+All three share `KOPIA_PASSWORD` from `~/.config/kopia/env` — one secret, three
+repositories. The cost of the split is no deduplication *between* repositories,
+which is irrelevant here since none of them hold the same bytes.
+
+### Why (2b) runs second, and refuses to run early
+
+film-data is ~915 GB against 4.99 TB of Drive headroom, so both fit today. The
+ordering exists for the day that stops being true: if quota runs out, the leg
+that fails must be the replaceable one.
+
+That is enforced twice. The timer fires an hour later, and
+`snapshot-offsite-film.sh` reads (2a)'s heartbeat from
+`.backup-state/offsite-cloud.state` and **skips itself** unless that leg
+succeeded within 26 hours. Skipping exits 0, not 1 — a film backup that stands
+down while the photo backup is broken is the system working correctly, and
+failing there would only bury the alert that matters.
+
+The first (2b) run uploads ~915 GB and will take as long as the uplink takes,
+plausibly days. That is safe to leave alone: Kopia checkpoints as it goes, a
+later run resumes rather than restarting, and systemd will not start a second
+copy over a running one. `TimeoutStartSec=infinity` on that unit exists so
+systemd does not kill a run that is still making progress.
+
+### Nothing is excluded
+
+Immich's `thumbs/` and `encoded-video/` are regenerable, and an earlier version
+of this plan would have trimmed them. That plan was sized against Drive's free
+15 GB tier and was already reversed once — see [Why both legs back up
+everything](#why-both-legs-back-up-everything). The same reasoning applies here:
+a restore that silently lacks whatever a past judgement called "regenerable",
+discovered during an outage, costs more than the storage does.
+
+### Service (1b) — what it still needs
+
+Not active. Two one-time steps, neither done:
+
+1. **On the NAS**, export the disk (only `/mnt/ssd` is exported today). Add to
+   `/etc/exports` and run `sudo exportfs -ra`:
+
+   ```
+   /mnt/hdd 192.168.31.0/24(ro,sync,no_subtree_check,insecure,all_squash,anonuid=1001,anongid=1001)
+   ```
+
+   Read-only on purpose: this export exists so the backup can read, and nothing
+   on the PC writes here.
+
+2. **On the PC**, mount it and create the repository:
+
+   ```bash
+   sudo mkdir -p /mnt/nas-hdd
+   sudo mount -t nfs 192.168.31.7:/mnt/hdd /mnt/nas-hdd
+   set -a; . ~/.config/kopia/env; set +a
+   kopia repository create filesystem --path=/mnt/f/hdd-cloud-bk \
+     --config-file="$HOME/.config/kopia/hdd-cloud.config"
+   sudo cp /mnt/nas-ssd/nas-lab/scripts/backup/systemd/nas-backup-cloud.{service,timer} /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now nas-backup-cloud.timer
+   ```
+
+`film-data` is deliberately **not** part of this leg: 915 GB does not fit the
+PC's 930 GB `/mnt/f` alongside the SSD repository already there. Service (2b)
+covers it to Drive instead.
+
 ## The tool landscape
 
 Backup tools fall into four families, and picking the wrong *family* costs more

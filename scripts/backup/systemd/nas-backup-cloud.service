@@ -1,0 +1,11 @@
+[Unit]
+Description=Service (1b) — pull /mnt/nas-hdd/cloud into the local Kopia repo on /mnt/f
+Documentation=file:///mnt/nas-ssd/nas-lab/docs/back-up-services/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=1000
+ExecStart=/mnt/nas-ssd/nas-lab/scripts/backup/snapshot-local-cloud.sh
+TimeoutStartSec=6h

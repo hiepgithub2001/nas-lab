@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily film-data backup to Google Drive (service 2b, after 2a)
+
+[Timer]
+# 05:30 — an hour behind service (2a). The one-hour gap is a convenience, not
+# the guarantee: snapshot-offsite-film.sh reads (2a)'s heartbeat and skips
+# itself unless that leg succeeded within the last 26 hours. The ordering
+# matters because film-data must never consume the Drive quota that the photo
+# backup needs.
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
