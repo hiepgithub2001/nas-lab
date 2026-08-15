@@ -1,0 +1,25 @@
+# Exclusions for service (2b) — /mnt/hdd/film-data -> gdrive:film-data-bk.
+#
+# Separate from excludes.txt because that file is entirely `nas-lab/...` paths
+# under the /mnt/ssd appdata root, none of which exist here. Paths below are
+# relative to this leg's snapshot root, /mnt/hdd/film-data.
+#
+# Same principle as excludes.txt: this holds only what *cannot* be backed up,
+# not what is large. `media/` is 1.1 TB and stays in.
+#
+# No inline comments — the apply loop only skips lines that *start* with '#',
+# so trailing text would become part of the pattern.
+
+# qBittorrent's in-progress downloads. These are renamed and moved the instant
+# a download completes, so a snapshot that reads one mid-transfer fails with
+# "no such file or directory" — Kopia counts that as a fatal error and exits
+# non-zero even though the snapshot itself was created. That is exactly how
+# this leg failed on 2026-08-15, 4h05m in, on two files.
+#
+# They are also worthless: a partial download restores as a partial download,
+# and the torrent client re-fetches it anyway. ~13 GB at the time of writing.
+#
+# Note what is NOT excluded: torrents/ itself. Those entries are hardlinks into
+# media/, so Kopia's content-addressed store dedupes them to almost nothing,
+# and keeping them preserves the layout qBittorrent needs to keep seeding.
+torrents/incomplete/

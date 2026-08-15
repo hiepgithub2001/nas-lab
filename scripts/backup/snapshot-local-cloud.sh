@@ -2,10 +2,12 @@
 # Service (1b): pull-snapshot /mnt/nas-hdd/cloud (NFS) into a Kopia repo on the
 # PC's /mnt/f. Runs on the PC (WSL) only.
 #
-# NOT YET ACTIVE. It needs two one-time steps that have not been done:
-#   1. On the NAS, export /mnt/hdd over NFS (only /mnt/ssd is exported today).
-#   2. On the PC, mount it at /mnt/nas-hdd and create the repository.
-# See docs/back-up-services/README.md, "Service (1b)".
+# Two one-time steps have to be in place before this can run, because Kopia
+# snapshots a local path and has no way to reach into the NAS by itself:
+#   1. On the NAS, /mnt/hdd exported over NFS, read-only.
+#   2. On the PC, that export mounted at /mnt/nas-hdd (fstab, x-systemd.automount)
+#      and the repository created at /mnt/f/cloud-bk.
+# See docs/back-up-services/README.md, "Service (1b) — setting it up".
 #
 # film-data/ is deliberately not covered by this leg. It is ~915 GB against the
 # PC's 930 GB /mnt/f, which already holds the SSD repository — it does not fit,

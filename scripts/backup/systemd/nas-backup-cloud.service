@@ -4,8 +4,14 @@ Documentation=file:///mnt/nas-ssd/nas-lab/docs/back-up-services/README.md
 After=network-online.target
 Wants=network-online.target
 
+# Both local legs now fire on the same two boot offsets, so systemd queues them
+# in one transaction and would otherwise run them concurrently — two kopia
+# processes pulling over NFS and writing to the same /mnt/f spindle. This is
+# ordering only, NOT a dependency: if service (1) fails, this still runs.
+After=nas-backup.service
+
 [Service]
 Type=oneshot
-User=1000
+User=lehiep
 ExecStart=/mnt/nas-ssd/nas-lab/scripts/backup/snapshot-local-cloud.sh
 TimeoutStartSec=6h

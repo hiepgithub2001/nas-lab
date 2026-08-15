@@ -38,6 +38,18 @@ nas-lab/appdata/beszel/data/id_ed25519
 nas-lab/appdata/immich/postgres/
 nas-lab/appdata/nextcloud/postgres/
 
+# Nextcloud's logrotate state file, 0600 with FLAPPING ownership: logrotate runs
+# as root inside the container and writes it root:root, then a later chown puts
+# it back to 1001. Read it in that window and you get permission denied, which
+# is why service (2) failed on 2026-08-14 and 2026-08-15 while a manual read the
+# same afternoon succeeded — the file was root-owned at 03:43 and lehiep-owned
+# by the time anyone looked. Only the file, not config/log/, which also holds
+# the nginx and php log configuration and is worth keeping.
+#
+# Nothing is lost: it records which log was last rotated and when. Restoring
+# without it makes logrotate rotate once more than strictly needed.
+nas-lab/appdata/nextcloud/config/log/logrotate.status
+
 # --- Not regular files: nothing to store, nothing to restore ---
 #
 # Kopia's global policy has "ignore unknown types: true" and would skip these

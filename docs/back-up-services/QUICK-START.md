@@ -361,9 +361,37 @@ file changes nothing until it's applied. Re-apply on the host that owns the
 repo:
 
 ```bash
-scripts/backup/apply-policy.sh local     # on the PC  -> /mnt/nas-ssd
-scripts/backup/apply-policy.sh offsite   # on the NAS -> /mnt/ssd
+# on the PC
+scripts/backup/apply-policy.sh local           # (1)  -> /mnt/nas-ssd
+scripts/backup/apply-policy.sh local-cloud     # (1b) -> /mnt/nas-hdd/cloud
+
+# on the NAS
+scripts/backup/apply-policy.sh offsite         # (2)  -> /mnt/ssd
+scripts/backup/apply-policy.sh offsite-cloud   # (2a) -> /mnt/hdd/cloud
+scripts/backup/apply-policy.sh offsite-film    # (2b) -> /mnt/hdd/film-data
 ```
+
+**One mode per leg, because one repository per leg.** A leg with no mode keeps
+whatever retention `kopia repository create` happened to default to. That is not
+hypothetical: (2a) and (2b) sat on Kopia's stock weekly-4/daily-7 instead of
+this project's weekly-8/daily-14 from the day they were created until
+2026-08-15, and nothing reported it, because retention drift is invisible until
+you go looking for a snapshot that has already been pruned.
+
+**Which exclusion file each leg reads** matters just as much:
+
+| Leg | Exclusion list |
+|---|---|
+| (1), (2) | `excludes.txt` |
+| (2b) | `excludes-film.txt` |
+| (1b), (2a) | none |
+
+`excludes.txt` is entirely `nas-lab/…` paths under the `/mnt/ssd` appdata root,
+so it is meaningless for any `/mnt/hdd` leg — editing it does **not** affect
+(1b), (2a) or (2b). The film leg gets its own file because its one real
+exclusion, `torrents/incomplete/`, is relative to a different root. (1b) and
+(2a) need none: their source is only `immich/` and `nextcloud/` data, with
+nothing unreadable in it.
 
 That script clears the ignore list, re-adds every rule in a single call, then
 **diffs the resulting policy against the source files and exits non-zero on a

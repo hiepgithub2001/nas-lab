@@ -72,8 +72,13 @@ size, not "will probably never need it," just unreadable paths (ext4's
 the NFS export is `all_squash,anonuid=1001` so no client UID, root included,
 can read them either) and things that aren't real files (sockets, a stale
 lock, this system's own staging directories). One file,
-`scripts/backup/excludes.txt`, shared verbatim by both legs, applied and
-verified by `scripts/backup/apply-policy.sh local|offsite`.
+`scripts/backup/excludes.txt`, shared verbatim by the two `/mnt/ssd` legs,
+applied and verified by `scripts/backup/apply-policy.sh local|offsite`.
+
+The `/mnt/hdd` legs do not read that file — every rule in it is a `nas-lab/…`
+path that does not exist under their roots. (2b) has its own one-rule list in
+`excludes-film.txt`; (1b) and (2a) need none. See
+[`torrents/incomplete/`](#torrentsincomplete--the-moving-target-problem).
 
 Measured 2026-08-13: a full local snapshot is **7.8 GB across 11,008 files and
 takes 59 seconds** over NFS, and the repository on `/mnt/f` holds 6.7 GB after
@@ -173,7 +178,7 @@ be re-acquired, photos cannot.
 |---|---|---|---|---|
 | **(2a)** | `/mnt/hdd/cloud` | `gdrive:hdd-cloud-bk` | daily 04:30 | **live** |
 | **(2b)** | `/mnt/hdd/film-data` | `gdrive:film-data-bk` | daily 05:30, after (2a) | **live** |
-| **(1b)** | `/mnt/nas-hdd/cloud` | PC `/mnt/f/hdd-cloud-bk` | per WSL boot | **not active** |
+| **(1b)** | `/mnt/nas-hdd/cloud` | PC `/mnt/f/cloud-bk` | 2× per WSL boot, same as (1) | **live** |
 
 ### Three repositories, not one
 
@@ -211,7 +216,7 @@ later run resumes rather than restarting, and systemd will not start a second
 copy over a running one. `TimeoutStartSec=infinity` on that unit exists so
 systemd does not kill a run that is still making progress.
 
-### Nothing is excluded
+### Nothing is excluded for being large
 
 Immich's `thumbs/` and `encoded-video/` are regenerable, and an earlier version
 of this plan would have trimmed them. That plan was sized against Drive's free
@@ -220,31 +225,121 @@ everything](#why-both-legs-back-up-everything). The same reasoning applies here:
 a restore that silently lacks whatever a past judgement called "regenerable",
 discovered during an outage, costs more than the storage does.
 
-### Service (1b) — what it still needs
+One path *is* excluded, and it is not a size judgement.
 
-Not active. Two one-time steps, neither done:
+#### `torrents/incomplete/` — the moving-target problem
 
-1. **On the NAS**, export the disk (only `/mnt/ssd` is exported today). Add to
-   `/etc/exports` and run `sudo exportfs -ra`:
+Service (2b) failed on 2026-08-15, four hours into a run, with:
 
-   ```
-   /mnt/hdd 192.168.31.0/24(ro,sync,no_subtree_check,insecure,all_squash,anonuid=1001,anongid=1001)
+```
+Error when processing "torrents/incomplete/The.Dark.Knight...mkv":
+  unable to open local file: ... no such file or directory
+```
+
+qBittorrent moves a download out of `incomplete/` the instant it finishes.
+Kopia opens the file, it is gone, and Kopia treats a vanished file as a **fatal**
+error — the snapshot is still created, but the process exits non-zero and the
+unit goes red. Any run overlapping an active download hits this, so the leg was
+failing more or less whenever it did real work.
+
+The rule lives in `scripts/backup/excludes-film.txt`, separate from
+`excludes.txt` because that file is entirely `nas-lab/…` paths relative to the
+`/mnt/ssd` root and means nothing under `/mnt/hdd/film-data`.
+
+**`torrents/` itself stays in**, which is the part worth understanding. Its
+entries are hardlinks into `media/`: `du` reports `media/` at 1.1 TB and
+`torrents/` at only 46 GB of *unique* blocks, though its children sum to
+several hundred GB. Kopia is content-addressed, so that duplication costs
+essentially nothing, and keeping the tree preserves the layout qBittorrent
+needs in order to keep seeding. Only `incomplete/` is both worthless — a
+partial download restores as a partial download — and impossible to read
+reliably.
+
+### Service (1b) — how it was set up
+
+**Live since 2026-08-15.** First run: 36 GB, 10,855 files, 397s, exit 0. Kept
+here as the rebuild runbook — every step below was run and verified in that
+order, and it is what you repeat if the PC or the NAS is rebuilt.
+
+Kopia snapshots a **local path**. It has no NAS-side agent and no push mode, so
+the PC cannot read `/mnt/hdd` unless that disk appears in the PC's own
+filesystem — exactly the arrangement service (1) already uses for `/mnt/ssd` via
+`/mnt/nas-ssd`. So the NFS export and the PC-side mount are not optional
+plumbing around the backup; they *are* how the backup reads its source.
+
+Two one-time steps, one per host. Order matters: step 2 mounts what step 1
+exports, and fails loudly if step 1 was skipped.
+
+1. **On the NAS**, export the disk (only `/mnt/ssd` was exported before). Append
+   to `/etc/exports`, then reload:
+
+   ```bash
+   echo '/mnt/hdd 192.168.31.0/24(ro,sync,no_subtree_check,insecure,all_squash,anonuid=1001,anongid=1001)' \
+     | sudo tee -a /etc/exports
+   sudo exportfs -ra && showmount -e localhost
    ```
 
    Read-only on purpose: this export exists so the backup can read, and nothing
-   on the PC writes here.
+   on the PC writes here. `all_squash,anonuid=1001` maps every client request to
+   the NAS's `lehiep` (uid **1001**, not the PC's 1000), which is what makes
+   Nextcloud's `0770` directories and Immich's `root:root` tree readable from
+   the PC without loosening a single permission on the disk.
 
-2. **On the PC**, mount it and create the repository:
+2. **On the PC**, mount it, create the repository, install the timer:
 
    ```bash
    sudo mkdir -p /mnt/nas-hdd
-   sudo mount -t nfs 192.168.31.7:/mnt/hdd /mnt/nas-hdd
+   echo '192.168.31.7:/mnt/hdd /mnt/nas-hdd nfs ro,_netdev,noauto,x-systemd.automount,x-systemd.idle-timeout=600 0 0' \
+     | sudo tee -a /etc/fstab
+   sudo systemctl daemon-reload
+   sudo systemctl start 'mnt-nas\x2dhdd.automount'
+   ls /mnt/nas-hdd/cloud        # triggers the automount; expect immich/ and nextcloud/
+
+   # Repository and policy. Needs no root. `create` refuses to run against an
+   # existing repository, so on anything but a from-scratch rebuild skip
+   # straight to apply-policy, which is safe to re-run.
    set -a; . ~/.config/kopia/env; set +a
-   kopia repository create filesystem --path=/mnt/f/hdd-cloud-bk \
+   kopia repository create filesystem --path=/mnt/f/cloud-bk \
      --config-file="$HOME/.config/kopia/hdd-cloud.config"
+   /mnt/nas-ssd/nas-lab/scripts/backup/apply-policy.sh local-cloud
+
    sudo cp /mnt/nas-ssd/nas-lab/scripts/backup/systemd/nas-backup-cloud.{service,timer} /etc/systemd/system/
    sudo systemctl daemon-reload && sudo systemctl enable --now nas-backup-cloud.timer
+   sudo systemctl start nas-backup-cloud.service   # prime it now, don't wait for a boot
    ```
+
+   The fstab entry matters more than the one-shot `mount` it replaces: without
+   it the mount is gone after the next `wsl --shutdown` and the leg fails on
+   every run until someone remembers. `x-systemd.automount` keeps a dead NAS
+   from hanging boot — the mount is attempted on first access instead, and if it
+   fails the script's empty-source guard stops the run rather than snapshotting
+   nothing over real history.
+
+   The first run copies ~34 GB over NFS and will take a while; later runs move
+   only new photos.
+
+   The timer is a copy of `nas-backup.timer` — `OnBootSec=2min` and
+   `OnBootSec=62min`, the same two firings as service (1), so there is one
+   schedule to remember for this host rather than two. Because both then land
+   in the same systemd transaction, `nas-backup-cloud.service` carries
+   `After=nas-backup.service`: ordering only, so the two kopia runs take the
+   NFS link and the `/mnt/f` spindle in turn instead of fighting over them, and
+   a failure in service (1) does not stop this one.
+
+3. **Verify**, rather than assuming. The two checks that actually matter:
+
+   ```bash
+   # Both awkward trees readable through the squash mapping? Expect no output.
+   find /mnt/nas-hdd/cloud -maxdepth 4 ! -readable
+
+   # Leg green, timer enabled, heartbeat written?
+   /mnt/nas-ssd/nas-lab/scripts/backup/backup-status.sh
+   ```
+
+   The `find` is the one worth keeping: Nextcloud's `0770` directories and
+   Immich's `root:root` tree are exactly what `anonuid=1001` exists to make
+   readable, and if that mapping is wrong the snapshot still *succeeds* — it
+   just silently skips what it could not open.
 
 `film-data` is deliberately **not** part of this leg: 915 GB does not fit the
 PC's 930 GB `/mnt/f` alongside the SSD repository already there. Service (2b)
@@ -540,7 +635,22 @@ gain, since rclone here is a transport, not the encryption boundary.
 | | latest | daily | weekly | monthly |
 |---|---|---|---|---|
 | Service (1) | 10 | 14 | 8 | 12 |
+| Service (1b) | 10 | 14 | 8 | 12 |
 | Service (2) | — | 14 | 8 | 24 |
+| Service (2a) | — | 14 | 8 | 24 |
+| Service (2b) | — | 14 | 8 | 24 |
+
+**Every leg needs its own `apply-policy.sh` mode**, because every leg is its own
+repository with its own policy manifest. A leg with no mode is not "using the
+defaults from the table above" — it silently keeps whatever
+`kopia repository create` happened to set. On 2026-08-15 that turned out to be
+true of three legs at once: (1b) had just been created, and (2a) and (2b) had
+been running since 2026-08-14 on Kopia's stock **weekly 4, daily 7** rather than
+the weekly 8, daily 14 above.
+
+Nothing reported it, and nothing would have: retention drift is invisible until
+the day you go looking for a snapshot that has already been pruned. That is why
+`apply-policy.sh` now has one mode per leg and verifies what it wrote.
 
 Service (1) drops `--keep-hourly` — with two runs per boot rather than a
 continuous hourly cadence, an "hourly" retention bucket doesn't correspond to
