@@ -80,6 +80,11 @@ Third-party services on the public internet, used by Bazarr for subtitle downloa
 | Service              | URL                          | Username | Password   |
 |----------------------|------------------------------|----------|------------|
 | OpenSubtitles.com    | https://www.opensubtitles.com | `admin`  | `admin123` |
+| VietMediaF           | (private tracker)             | `hiep622032001` | `hiep@vF1002` |
+
+VietMediaF login email: `hiep622032001@gmail.com`. Private Vietnamese-language
+torrent tracker for movies/TV, invite-only — this account was not self-registered
+via a public signup form. Not yet wired into Prowlarr as an indexer.
 
 > **These are not like the local logins above.** The local apps are safe with a weak
 > shared password only because they are bound to `localhost` on this machine. This
