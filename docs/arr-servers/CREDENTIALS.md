@@ -81,10 +81,20 @@ Third-party services on the public internet, used by Bazarr for subtitle downloa
 |----------------------|------------------------------|----------|------------|
 | OpenSubtitles.com    | https://www.opensubtitles.com | `admin`  | `admin123` |
 | VietMediaF           | (private tracker)             | `hiep622032001` | `hiep@vF1002` |
+| NetHD (VietTorrent)  | https://nethd.org             | `lehiep2203`    | `hiep@nD1002` |
 
 VietMediaF login email: `hiep622032001@gmail.com`. Private Vietnamese-language
 torrent tracker for movies/TV, invite-only — this account was not self-registered
 via a public signup form. Not yet wired into Prowlarr as an indexer.
+
+NetHD login email: `hiep622032001@gmail.com`. Semi-private Vietnamese-language
+tracker for HD movies/TV. **Added to Prowlarr as indexer id 64 on 2026-08-19** —
+connection tested and a live search returned results, so the credentials are
+confirmed working. This is the stack's only Vietnamese-content indexer.
+
+- Set **Torrents per page: 100** on the NetHD account profile; the Prowlarr
+  definition expects it for complete result pages.
+- NetHD deletes accounts after **2 years of inactivity**.
 
 > **These are not like the local logins above.** The local apps are safe with a weak
 > shared password only because they are bound to `localhost` on this machine. This
