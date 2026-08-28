@@ -216,6 +216,64 @@ later run resumes rather than restarting, and systemd will not start a second
 copy over a running one. `TimeoutStartSec=infinity` on that unit exists so
 systemd does not kill a run that is still making progress.
 
+### The (2b) size cap — 3.5 TiB
+
+Ordering decides who loses when the quota runs out. The cap stops it running
+out at all.
+
+Since 2026-08-27, `snapshot-offsite-film.sh` measures `gdrive:film-data-bk`
+before every run and skips if it has reached **3.5 TiB**
+(`MAX_DEST_BYTES`, 3,848,290,697,216 bytes). The account is 5 TiB exactly
+(`rclone about gdrive:` → 5,497,558,138,880), so the cap reserves **1.5 TiB**
+for (2), (2a) and anything else that lands on that Drive.
+
+Binary units throughout, because that is what the quota is measured in and what
+`rclone size` reports. 3.5 TB decimal would be 3.18 TiB and would reserve
+1.81 TiB — a different promise than the one intended.
+
+Three details worth knowing:
+
+- **The cap is a floor with a little give, not a hard wall.** Kopia has no byte
+  budget and cannot be stopped cleanly partway, so the check runs before the
+  upload. A run starting just under the cap can finish just over it, by at most
+  one run's incremental. The 1.5 TiB reserve is sized to absorb that.
+- **Measuring costs ~3.5 minutes** — `rclone size` walks 137k objects.
+  `--fast-list` was measured *slower* on this remote (4m34s vs 3m39s) and is
+  deliberately not used. The leg already runs for ~10 minutes.
+- **An unmeasurable destination fails, it does not skip.** Passing a cap that
+  was never verified would defeat the point. Note the corollary: if the
+  repository is ever re-created from scratch, the folder will not exist and the
+  first run will fail until it does — create it, or run the leg once by hand.
+
+When the cap is reached, the fix is to prune (2b)'s retention (14 daily,
+8 weekly, 24 monthly, 3 annual — the table below), not to raise the cap into
+the reserve. Read those with
+`kopia policy show /mnt/hdd/film-data --config-file=~/.config/kopia/film-data.config`;
+the `--global` policy is Kopia's stock 7/4 and is *not* what applies here.
+
+### `skipped` is a third outcome, distinct from `ok`
+
+A leg that stands down on purpose — either (2b) gate — exits 0, because nothing
+is broken. But recording that as `ok` would let `backup-status.sh` report a leg
+that has quietly stopped backing up as healthy, which is the failure this whole
+design exists to prevent.
+
+So `lib-state.sh` writes `result=skipped` plus a one-line `reason=`, and
+`backup-status.sh` renders it as **WARN** with the reason, never green:
+
+```
+WARN  last run on ubuntu-2404 SKIPPED — no new backup was taken
+      why:       gdrive:film-data-bk is at 3.51 TiB of its 3.50 TiB cap — ...
+WARN  no successful run since at least 2026-08-27 05:39:48 UTC — expected within 26h
+```
+
+That second line matters: staleness is measured against the last *successful*
+run. Without it, a leg skipping every night would refresh its own heartbeat
+forever and never look stale.
+
+A script that crashed cannot label itself skipped — `STATE_RESULT` is honoured
+only on a clean exit, so a failure can never be dressed up as a decision.
+
 ### Nothing is excluded for being large
 
 Immich's `thumbs/` and `encoded-video/` are regenerable, and an earlier version

@@ -22,6 +22,18 @@ record_state() {
   local exit_code="${1:-0}" leg="${2:-$LEG_NAME}" root="${3:-$ROOT}"
   local dir; dir="$(state_dir "$root")"
   local started="${STATE_STARTED:-}" now; now="$(date +%s)"
+  local result
+
+  # Three outcomes, not two. A leg that deliberately stood down — the priority
+  # gates in (2b), or its destination cap — exits 0 because nothing is broken,
+  # but recording that as "ok" would make backup-status.sh report a leg that has
+  # silently stopped backing up as healthy. `skipped` is how a leg says "I chose
+  # not to run", and STATE_REASON carries the why straight into the report.
+  #
+  # Only honoured on a clean exit: a script that crashed cannot label itself
+  # skipped, so a failure can never be dressed up as a decision.
+  result="$([ "$exit_code" -eq 0 ] && echo ok || echo fail)"
+  [ "$exit_code" -eq 0 ] && [ -n "${STATE_RESULT:-}" ] && result="$STATE_RESULT"
 
   mkdir -p "$dir" 2>/dev/null || return 0
 
@@ -31,7 +43,8 @@ record_state() {
     echo "finished_at=$now"
     echo "finished_human=$(date -d "@$now" '+%Y-%m-%d %H:%M:%S %Z')"
     echo "exit=$exit_code"
-    echo "result=$([ "$exit_code" -eq 0 ] && echo ok || echo fail)"
+    echo "result=$result"
+    [ -n "${STATE_REASON:-}" ] && echo "reason=$STATE_REASON"
     [ -n "$started" ] && echo "duration_s=$((now - started))"
   } > "$dir/$leg.state.tmp" 2>/dev/null || return 0
 

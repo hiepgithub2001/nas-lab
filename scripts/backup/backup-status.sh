@@ -141,9 +141,10 @@ read_beat() {
   local f="$1"
   # Cleared first: these are globals reused for every leg, and a leg with no
   # heartbeat would otherwise report the previous leg's host as its own.
-  B_RESULT=; B_EXIT=; B_AT=; B_HUMAN=; B_DURATION=; B_HOST=; B_AGE=0
+  B_RESULT=; B_EXIT=; B_AT=; B_HUMAN=; B_DURATION=; B_HOST=; B_AGE=0; B_REASON=
   [ -f "$f" ] || return 1
   B_RESULT=$(sed -n 's/^result=//p' "$f")
+  B_REASON=$(sed -n 's/^reason=//p' "$f")
   B_EXIT=$(sed -n 's/^exit=//p' "$f")
   B_AT=$(sed -n 's/^finished_at=//p' "$f")
   B_HUMAN=$(sed -n 's/^finished_human=//p' "$f")
@@ -255,14 +256,28 @@ report_inflight() {
 report_beat() {
   local key="$1" mine="$2" lim
   if read_beat "$STATE_DIR/$key.state"; then
-    if [ "$B_RESULT" = ok ]; then ok "last run on $B_HOST succeeded (exit $B_EXIT)"
-    else bad "last run on $B_HOST FAILED (exit $B_EXIT)"; fi
+    case "$B_RESULT" in
+      ok)      ok   "last run on $B_HOST succeeded (exit $B_EXIT)" ;;
+      # A leg that stood down on purpose. Not a failure — but not healthy
+      # either, because nothing was backed up, so it must not read as green.
+      skipped) warn "last run on $B_HOST SKIPPED — no new backup was taken"
+               [ -n "$B_REASON" ] && info "why:       $B_REASON" ;;
+      *)       bad  "last run on $B_HOST FAILED (exit $B_EXIT)" ;;
+    esac
     info "finished:  $B_HUMAN  (${B_AGE}m ago)"
     [ -n "$B_DURATION" ] && info "took:      ${B_DURATION}s"
 
+    # Staleness is measured against the last *successful* run, so a leg that
+    # skips every night still trips this once the skips outlast the window —
+    # otherwise a daily skip would keep the heartbeat fresh forever and hide
+    # the fact that the backup has quietly stopped advancing.
     lim=$(( ${L_BEAT[$key]} * 60 ))
-    [ "$B_AGE" -gt "$lim" ] && \
-      warn "no successful run in $((B_AGE/60))h — expected within ${L_BEAT[$key]}h"
+    if [ "$B_RESULT" = ok ]; then
+      [ "$B_AGE" -gt "$lim" ] && \
+        warn "no successful run in $((B_AGE/60))h — expected within ${L_BEAT[$key]}h"
+    else
+      warn "no successful run since at least $B_HUMAN — expected within ${L_BEAT[$key]}h"
+    fi
   else
     warn "$key has never completed a run"
     # The hint tells you how to set the leg up, so it is wrong to print it while
