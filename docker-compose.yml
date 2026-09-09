@@ -124,6 +124,11 @@ services:
       - ${CONFIG_ROOT}/recyclarr:/config
 
   jellyfin:
+    # Tracks upstream, majors included: `compose pull` takes whatever :latest
+    # points at that day. 10.11.11 -> 12.0 arrived this way on 2026-09-08, and
+    # 12.0's database migration cannot be rolled back without a full restore, so
+    # back up appdata/jellyfin before pulling. Plain `up -d` is safe — it reuses
+    # the local image and never re-resolves the tag.
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     restart: unless-stopped
@@ -141,6 +146,37 @@ services:
       - /dev/dri:/dev/dri
     group_add:
       - "993"
+    # Partial workaround for an ISP block on themoviedb.org, not a fix. Read the
+    # measurements before assuming this makes TMDB work — it does not.
+    #
+    # The block has two layers. The first is a DNS sinkhole: the ISP's resolver
+    # answers api.themoviedb.org with 127.0.0.1 (NOERROR, decrementing TTL, so it
+    # is relayed from upstream rather than invented by the router — no router
+    # setting fixes it). Jellyfin then dials itself on :443 and logs "Connection
+    # refused" in microseconds. These lines below defeat that layer.
+    #
+    # The second layer survives them. TCP to the real CloudFront edges opens
+    # fine, then the TLS session is reset — the same IP succeeds and fails
+    # minutes apart, which points at DPI on the TLS SNI rather than an IP or port
+    # rule. Measured 2026-09-09 over 20 trials each: 3/20 from this container
+    # with these servers, and 3/20 from the host with DNS bypassed entirely via
+    # --resolve. Identical, which is what proves DNS is no longer the binding
+    # constraint. Before the change it was 0/20, so this is worth keeping.
+    #
+    # Net effect: TMDB metadata goes from never working to working ~15% of the
+    # time. Artwork for new movies is unreliable; the 424 already in the library
+    # keep the posters they have. Anything better needs the traffic to leave via
+    # a path the ISP cannot inspect.
+    #
+    # Only Jellyfin needs this. Radarr goes through api.radarr.video and Sonarr
+    # through skyhook.sonarr.tv, neither of which is on the block list — verified
+    # in 48h of their logs, zero TMDB calls and zero metadata errors.
+    #
+    # Docker keeps its embedded resolver at 127.0.0.11 for container-name lookups
+    # and forwards only external queries here, so service discovery is unaffected.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config
       - ${DATA_ROOT}/media:/data/media
