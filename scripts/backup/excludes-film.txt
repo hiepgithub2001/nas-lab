@@ -23,3 +23,27 @@
 # media/, so Kopia's content-addressed store dedupes them to almost nothing,
 # and keeping them preserves the layout qBittorrent needs to keep seeding.
 torrents/incomplete/
+
+# --- 4K/UHD releases -----------------------------------------------------------
+# The exception to the "only what cannot be backed up" rule above, and a
+# deliberate one. On 2026-09-01 the source (3.53 TiB) outgrew this leg's 3.50 TiB
+# destination cap, and the leg has skipped every night since — 240 GB of new
+# films had no offsite copy by 2026-09-09. Pruning could not fix it: the library
+# only ever grows, so old snapshots are subsets of new ones and dedupe to almost
+# nothing. 15 snapshots spanning two weeks cost about as much as one copy.
+#
+# So the choice was what to protect, not how to pack it tighter. 4K is the tier
+# that is largest and cheapest to re-acquire: 1.45 TiB across 1861 unique files,
+# which is the whole overage and then some. Excluding it leaves ~2.07 TiB stored
+# against a 3.50 TiB cap — room to grow rather than a fix that lasts a week.
+#
+# Three patterns because kopia's globs are case-sensitive and the library uses
+# all three casings: 2160p (1920 files), 4K (300), UHD (133). Verified against
+# the tree — no file over 25 GB escapes them.
+#
+# These match inside torrents/ as well as media/, which is required, not
+# incidental: those are hardlinks to the same inodes, and a rule that missed
+# them would leave every block still referenced and reclaim nothing.
+*2160p*
+*4K*
+*UHD*
