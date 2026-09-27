@@ -200,17 +200,34 @@ def find_counterpart(sub_path, want):
     stem = stem_of(sub_path)
     aliases = LANG_ALIASES.get(want, {want})
     alt = "|".join(re.escape(a) for a in aliases)
-    best = None
+    # Rank rather than take the last match. A title can carry several tracks
+    # for one language — "<stem>.vi.srt" beside "<stem>.AI.vi.srt" beside a
+    # hi/sdh variant — and every one of them matches the language code. Reading
+    # them in os.listdir order picked whichever the filesystem happened to
+    # return last, so the same library produced a human-translated dual track
+    # for one episode and a machine-translated one for the next.
+    #
+    # Lower sorts better: an unqualified track beats a titled one like "AI",
+    # which in turn beats hi/sdh/forced. Falling back to the AI track when it
+    # is the only Vietnamese present is deliberate — that is the case
+    # ai-translate-sub.py was written to feed.
+    def rank(tail):
+        flagged = bool(re.search(r"\.(hi|sdh|forced|cc)\b", tail))
+        qualified = not re.match(rf"^\.({alt})\.srt$", tail)
+        return (flagged, qualified, tail)
+
+    best = best_rank = None
     for f in os.listdir(directory):
         if not f.lower().endswith(".srt") or f == base or DUAL_RE.search(f):
             continue
         if not f.startswith(stem):
             continue
         tail = f[len(stem):].lower()
-        if re.search(rf"\.({alt})\b", tail):
-            # prefer the plain track over hi/sdh/forced variants
-            if best is None or not re.search(r"\.(hi|sdh|forced|cc)\b", tail):
-                best = os.path.join(directory, f)
+        if not re.search(rf"\.({alt})\b", tail):
+            continue
+        r = rank(tail)
+        if best_rank is None or r < best_rank:
+            best, best_rank = os.path.join(directory, f), r
     return best
 
 
