@@ -258,7 +258,7 @@ docker exec -it immich-postgres psql -U immich -c "ALTER USER immich PASSWORD 'n
 
 Nextcloud's admin account was created during the CLI install above (user
 `admin`); Immich's is created on first visit to its web UI. Record both in
-`docs/arr-servers/CREDENTIALS.md` alongside the rest, and change the generated
+`docs/CREDENTIALS.md` alongside the rest, and change the generated
 Nextcloud admin password from Settings → Personal → Security.
 
 ## Upgrades

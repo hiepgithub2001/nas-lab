@@ -23,7 +23,7 @@
 set -uo pipefail
 
 JELLYFIN_URL="${JELLYFIN_URL:-http://localhost:8096}"
-# Key is already recorded in docs/arr-servers/CREDENTIALS.md; override via env if it rotates.
+# Key is already recorded in docs/CREDENTIALS.md; override via env if it rotates.
 API_KEY="${JELLYFIN_API_KEY:-3f9e151673bc446eab5fd83f752e9728}"
 CARD="${CARD:-/sys/class/drm/card1}"
 
