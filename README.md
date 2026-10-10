@@ -23,6 +23,15 @@ there. The rest of this README is the detailed reference behind those steps.
 | [Incidents](docs/incidents/) | Postmortems and known issues — what broke, why, and what prevents it recurring |
 | `docs/CREDENTIALS.md` | Logins and API keys |
 
+### Immich admin
+
+| Email | Password |
+|---|---|
+| `admin@immich.local` | `admin123` |
+
+Forgotten or changed? Reset it on the NAS with
+`docker exec -it immich-server immich-admin reset-admin-password`.
+
 ## How it fits together
 
 1. **Prowlarr** searches indexers/trackers for releases and knows where to find them.
